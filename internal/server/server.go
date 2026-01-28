@@ -157,6 +157,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/health", h.Health)
 	mux.HandleFunc("/api/version", h.Version)
 	mux.HandleFunc("/api/models/list", h.ListModels)
+	mux.HandleFunc("/api/models/downloaded", h.ListDownloadedModels)
 	mux.HandleFunc("/api/models/show", h.ShowModel)
 	mux.HandleFunc("/api/models/pull", h.PullModel)
 	mux.HandleFunc("/api/models/update-modelfile", h.UpdateModelfile)

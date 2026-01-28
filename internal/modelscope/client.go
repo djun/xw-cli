@@ -39,6 +39,9 @@ const (
 	// DefaultUserAgent is the user agent string for HTTP requests
 	DefaultUserAgent = "xw/1.0.0 (Go)"
 	
+	// DefaultNamespace is the default namespace for models without an explicit namespace
+	DefaultNamespace = "default"
+	
 	// ChunkSize for file downloads (8MB)
 	ChunkSize = 8 * 1024 * 1024
 	
@@ -117,15 +120,27 @@ func (c *Client) DownloadModel(
 	cacheDir string,
 	progress ProgressFunc,
 ) (string, error) {
-	// Parse model ID into owner and name
+	// Parse model ID and handle namespace
+	// If modelID has namespace (e.g., "Qwen/Qwen2-7B"), use it as-is
+	// If modelID has no namespace (e.g., "qwen2-7b"), add default namespace for file storage
+	var owner, name string
+	var modelDir string
+	
 	parts := strings.Split(modelID, "/")
-	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid model ID format: %s (expected: owner/name)", modelID)
+	if len(parts) == 2 {
+		// Has namespace: owner/name
+		owner, name = parts[0], parts[1]
+		modelDir = filepath.Join(cacheDir, owner, name)
+	} else if len(parts) == 1 {
+		// No namespace: use default namespace for file storage
+		owner = DefaultNamespace
+		name = modelID
+		modelDir = filepath.Join(cacheDir, owner, name)
+	} else {
+		return "", fmt.Errorf("invalid model ID format: %s (expected: name or owner/name)", modelID)
 	}
-	owner, name := parts[0], parts[1]
 	
 	// Create cache directory structure: cache_dir/owner/name
-	modelDir := filepath.Join(cacheDir, owner, name)
 	if err := os.MkdirAll(modelDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create model directory: %w", err)
 	}
@@ -145,90 +160,54 @@ func (c *Client) DownloadModel(
 		return "", fmt.Errorf("failed to get model files: %w", err)
 	}
 	
-	// Download files with controlled concurrency
-	// Allow multiple files to download simultaneously for better performance
-	// Limit concurrency to avoid overwhelming the network or server
-	const maxConcurrentDownloads = 3 // Download up to 3 files at a time
-	
-	semaphore := make(chan struct{}, maxConcurrentDownloads)
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(files))
-	
+	// Download files sequentially (no parallel downloads)
+	// Model files are typically large, so parallel downloads don't help much
 	for _, file := range files {
+		// Check context before each file
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		default:
 		}
 		
-		// Acquire semaphore slot
-		semaphore <- struct{}{}
-		wg.Add(1)
+		localPath := filepath.Join(modelDir, file.Name)
 		
-		go func(f FileInfo) {
-			defer func() {
-				<-semaphore // Release semaphore slot
-				wg.Done()
-			}()
-			
-			// Check context before starting
-			select {
-			case <-ctx.Done():
-				errChan <- ctx.Err()
-				return
-			default:
+		// Download file
+		if err := c.downloadFile(ctx, file, localPath, modelID, progress); err != nil {
+			// Don't report error if context was cancelled
+			if ctx.Err() != nil {
+				return "", ctx.Err()
 			}
-			
-			localPath := filepath.Join(modelDir, f.Name)
-		
-			// Download file
-			if err := c.downloadFile(ctx, f, localPath, modelID, progress); err != nil {
-				// Don't report error if context was cancelled
-				if ctx.Err() != nil {
-					return
-				}
-				errChan <- fmt.Errorf("failed to download %s: %w", f.Name, err)
-				return
+			return "", fmt.Errorf("failed to download %s: %w", file.Name, err)
 		}
 		
 		// Validate file integrity if SHA256 is available
-			if f.Sha256 != "" {
-				// Check context before validation
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-				
-			// Notify user that validation is in progress (can take time for large files)
-			if progress != nil {
-					progress(fmt.Sprintf("Verifying %s", f.Name), 0, 0)
+		if file.Sha256 != "" {
+			// Check context before validation
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			default:
 			}
 			
-				if err := c.validateFileIntegrity(localPath, f.Sha256); err != nil {
-					// Don't report error if context was cancelled
-					if ctx.Err() != nil {
-						return
-					}
-					errChan <- fmt.Errorf("integrity check failed for %s: %w", f.Name, err)
-					return
+			// Notify user that validation is in progress (can take time for large files)
+			if progress != nil {
+				progress(fmt.Sprintf("Verifying %s", file.Name), 0, 0)
+			}
+			
+			if err := c.validateFileIntegrity(localPath, file.Sha256); err != nil {
+				// Don't report error if context was cancelled
+				if ctx.Err() != nil {
+					return "", ctx.Err()
+				}
+				return "", fmt.Errorf("integrity check failed for %s: %w", file.Name, err)
 			}
 			
 			// Notify completion
 			if progress != nil {
-					progress(fmt.Sprintf("✓ Verified %s", f.Name), 0, 0)
+				progress(fmt.Sprintf("✓ Verified %s", file.Name), 0, 0)
 			}
 		}
-		}(file)
-	}
-	
-	// Wait for all downloads to complete
-	wg.Wait()
-	close(errChan)
-	
-	// Check if any download failed
-	if err := <-errChan; err != nil {
-		return "", err
 	}
 	
 	return modelDir, nil
@@ -769,4 +748,5 @@ func (c *Client) downloadFile(
 	
 	return nil
 }
+
 

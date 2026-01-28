@@ -194,20 +194,20 @@ func (m *ModelSpec) GetDefaultBackend() (*BackendOption, error) {
 
 // Validate checks if the model specification is valid
 //
+// Only validates essential fields that cannot be read from model files.
+// Metadata like DisplayName, Parameters, etc. will be read from config.json.
+//
 // Returns:
 //   - Error if validation fails, nil otherwise
 func (m *ModelSpec) Validate() error {
 	if m.ID == "" {
 		return fmt.Errorf("model ID cannot be empty")
 	}
-	if m.DisplayName == "" {
-		return fmt.Errorf("model display name cannot be empty")
-	}
 	if len(m.Backends) == 0 {
 		return fmt.Errorf("model %s must have at least one backend", m.ID)
 	}
-	if m.RequiredVRAM <= 0 {
-		return fmt.Errorf("model %s must specify required VRAM", m.ID)
+	if len(m.SupportedDevices) == 0 {
+		return fmt.Errorf("model %s must specify at least one supported device", m.ID)
 	}
 	return nil
 }

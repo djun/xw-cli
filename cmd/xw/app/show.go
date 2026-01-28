@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -31,6 +30,30 @@ type ShowOptions struct {
 }
 
 // NewShowCommand creates the show command.
+//
+// The show command displays information about a model, similar to Ollama's show command.
+// Information is retrieved from the Modelfile (if exists) or from the ModelSpec.
+//
+// Usage:
+//
+//	xw show MODEL [--modelfile|--parameters|--template|--system|--license]
+//
+// Examples:
+//
+//	# Show all information about a model
+//	xw show qwen2.5-7b-instruct
+//
+//	# Show only the Modelfile
+//	xw show qwen2.5-7b-instruct --modelfile
+//
+//	# Show only parameters
+//	xw show qwen2.5-7b-instruct --parameters
+//
+// Parameters:
+//   - globalOpts: Global options shared across commands
+//
+// Returns:
+//   - A configured cobra.Command for showing model information
 func NewShowCommand(globalOpts *GlobalOptions) *cobra.Command {
 	opts := &ShowOptions{
 		GlobalOptions: globalOpts,
@@ -39,21 +62,30 @@ func NewShowCommand(globalOpts *GlobalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show MODEL",
 		Short: "Show information about a model",
-		Long: `Display detailed information about an AI model in Ollama-compatible format.
+		Long: `Display information about a model in Ollama-compatible format.
 
 Without any flags, shows complete model information including architecture,
-parameters, capabilities, system prompt, and license.`,
+parameters, and license. With flags, displays specific sections.
+
+Information is retrieved from the Modelfile (user-editable) if it exists,
+otherwise from the model specification (built-in configuration).`,
 		Example: `  # Show all information
-  xw show qwen2-0.5b
+  xw show qwen2.5-7b-instruct
 
   # Show only the Modelfile
-  xw show qwen2-0.5b --modelfile
+  xw show qwen2.5-7b-instruct --modelfile
 
   # Show only parameters
-  xw show qwen2-0.5b --parameters
+  xw show qwen2.5-7b-instruct --parameters
 
   # Show only system prompt
-  xw show qwen2-0.5b --system`,
+  xw show qwen2.5-7b-instruct --system
+
+  # Show only template
+  xw show qwen2.5-7b-instruct --template
+
+  # Show only license
+  xw show qwen2.5-7b-instruct --license`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Model = args[0]
@@ -71,391 +103,242 @@ parameters, capabilities, system prompt, and license.`,
 }
 
 // runShow executes the show command logic.
+//
+// This function fetches model information from the server and displays it
+// according to the selected options.
+//
+// Parameters:
+//   - opts: Show command options
+//
+// Returns:
+//   - nil on success
+//   - error if the model doesn't exist or fetching information fails
 func runShow(opts *ShowOptions) error {
 	client := getClient(opts.GlobalOptions)
 
 	// Get model info from server
-	result, err := client.GetModel(opts.Model)
+	modelInfo, err := client.GetModel(opts.Model)
 	if err != nil {
-		return fmt.Errorf("failed to get model: %w", err)
+		return fmt.Errorf("failed to get model info: %w", err)
 	}
-
-	// Check if specific flag is set
-	hasModelfile, _ := result["has_modelfile"].(bool)
-	modelfileContent, _ := result["modelfile"].(string)
 
 	// Handle specific flags
 	if opts.Modelfile {
-		showModelfileOnly(result, hasModelfile, modelfileContent)
+		displayModelfile(modelInfo)
 		return nil
 	}
 
 	if opts.Parameters {
-		showParametersOnly(hasModelfile, modelfileContent)
+		displayParameters(modelInfo)
 		return nil
 	}
 
 	if opts.Template {
-		showTemplateOnly(hasModelfile, modelfileContent)
+		displayTemplate(modelInfo)
 		return nil
 	}
 
 	if opts.System {
-		showSystemOnly(hasModelfile, modelfileContent)
+		displaySystem(modelInfo)
 		return nil
 	}
 
 	if opts.License {
-		showLicenseOnly(result)
+		displayLicense(modelInfo)
 		return nil
 	}
 
-	// Default: show all information in Ollama format
-	showAllInformation(result, hasModelfile, modelfileContent)
+	// Default: show all information (Ollama format)
+	displayAllInfo(modelInfo)
 	return nil
 }
 
-// showAllInformation displays complete model information (default mode)
-func showAllInformation(result map[string]interface{}, hasModelfile bool, modelfileContent string) {
-	// Extract basic info
-	family, _ := result["family"].(string)
-	params, _ := result["parameters"].(float64)
-	ctxLen, _ := result["context_length"].(float64)
-	embeddingLen, _ := result["embedding_length"].(float64)
-	tag, _ := result["tag"].(string)
-	license, _ := result["license"].(string)
-	capabilities, _ := result["capabilities"].([]interface{})
-
-	// Parse Modelfile if exists
-	var systemPrompt string
-	var inferenceParams map[string]string
-
-	if hasModelfile {
-		systemPrompt = parseSystemFromModelfile(modelfileContent)
-		inferenceParams = parseParametersFromModelfile(modelfileContent)
-	}
-
-	// Use defaults if not found in Modelfile
-	if systemPrompt == "" {
-		systemPrompt = "You are a helpful AI assistant."
-	}
-
-	// Display format follows Ollama exactly
+// displayAllInfo displays complete model information in Ollama format
+func displayAllInfo(info map[string]interface{}) {
+	// Model section
+	fmt.Println("  Model")
 	fmt.Println()
 
-	// 1. Basic model information
-	if family != "" {
-		fmt.Printf("  %-25s %s\n", "architecture", family)
+	if arch, ok := info["architecture"].(string); ok && arch != "" {
+		fmt.Printf("    %-20s%s\n", "architecture", arch)
 	}
-	if params > 0 {
-		fmt.Printf("  %-25s %.1fB\n", "parameters", params)
+
+	if family, ok := info["family"].(string); ok && family != "" {
+		fmt.Printf("    %-20s%s\n", "family", family)
 	}
-	if ctxLen > 0 {
-		fmt.Printf("  %-25s %.0f\n", "context length", ctxLen)
+
+	if params, ok := info["parameters"].(float64); ok && params > 0 {
+		fmt.Printf("    %-20s%.1fB\n", "parameters", params)
 	}
-	if embeddingLen > 0 {
-		fmt.Printf("  %-25s %.0f\n", "embedding length", embeddingLen)
+
+	if ctxLen, ok := info["context_length"].(float64); ok && ctxLen > 0 {
+		fmt.Printf("    %-20s%.0f\n", "context length", ctxLen)
 	}
-	if tag != "" {
-		fmt.Printf("  %-25s %s\n", "quantization", strings.ToUpper(tag))
+
+	if embLen, ok := info["embedding_length"].(float64); ok && embLen > 0 {
+		fmt.Printf("    %-20s%.0f\n", "embedding length", embLen)
+	}
+
+	if quant, ok := info["quantization"].(string); ok && quant != "" {
+		fmt.Printf("    %-20s%s\n", "quantization", quant)
 	}
 
 	fmt.Println()
+	fmt.Println()
 
-	// 2. Capabilities
-	if len(capabilities) > 0 {
-		fmt.Println("Capabilities")
-		for _, cap := range capabilities {
+	// Capabilities section
+	if caps, ok := info["capabilities"].([]interface{}); ok && len(caps) > 0 {
+		fmt.Println("  Capabilities")
+		fmt.Println()
+		for _, cap := range caps {
 			if capStr, ok := cap.(string); ok {
-				fmt.Printf("  %s\n", capStr)
+				fmt.Printf("    %s\n", capStr)
 			}
 		}
+		fmt.Println()
+		fmt.Println()
+	}
+
+	// Parameters section (inference parameters from Modelfile)
+	if params, ok := info["inference_parameters"].(map[string]interface{}); ok && len(params) > 0 {
+		fmt.Println("  Parameters")
+		fmt.Println()
+		for key, value := range params {
+			fmt.Printf("    %-20s%v\n", key, value)
+		}
+		fmt.Println()
+		fmt.Println()
+	}
+
+	// System section
+	if system, ok := info["system"].(string); ok && system != "" {
+		fmt.Println("  System")
+		fmt.Println()
+		fmt.Printf("    %s\n", system)
+		fmt.Println()
+		fmt.Println()
+	}
+
+	// License section
+	if license, ok := info["license"].(string); ok && license != "" {
+		fmt.Println("  License")
+		fmt.Println()
+		// Print license with indentation
+		for _, line := range splitLines(license) {
+			fmt.Printf("    %s\n", line)
+		}
+		fmt.Println()
+		fmt.Println()
+	}
+}
+
+// splitLines splits text into lines
+func splitLines(text string) []string {
+	lines := []string{}
+	current := ""
+	for _, ch := range text {
+		if ch == '\n' {
+			lines = append(lines, current)
+			current = ""
+		} else {
+			current += string(ch)
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+// displayModelfile displays the complete Modelfile
+func displayModelfile(info map[string]interface{}) {
+	if modelfile, ok := info["modelfile"].(string); ok && modelfile != "" {
+		// If user has a Modelfile, show it directly
+		fmt.Println(modelfile)
+		return
+	}
+
+	// Generate default Modelfile from spec (following Ollama format)
+	fmt.Println("# Modelfile generated by \"xw show\"")
+	fmt.Println()
+
+	if modelID, ok := info["model_id"].(string); ok {
+		fmt.Printf("# To build a new Modelfile based on this, replace FROM with:\n")
+		fmt.Printf("# FROM %s\n\n", modelID)
+		// For now, use model ID directly since we don't have blob hashes
+		fmt.Printf("FROM %s\n\n", modelID)
+	}
+
+	// TEMPLATE (with triple quotes, multiline format)
+	if template, ok := info["template"].(string); ok && template != "" {
+		fmt.Printf("TEMPLATE \"\"\"%s\"\"\"\n\n", template)
 	} else {
-		fmt.Println("Capabilities")
-		fmt.Println("  completion")
-	}
-	fmt.Println()
-
-	// 3. Parameters (only if Modelfile exists and has parameters)
-	if len(inferenceParams) > 0 {
-		fmt.Println("Parameters")
-		for key, value := range inferenceParams {
-			fmt.Printf("  %-25s %s\n", key, value)
-		}
+		fmt.Println("TEMPLATE \"\"\"{{ .System }}")
+		fmt.Println("{{ .Prompt }}\"\"\"")
 		fmt.Println()
 	}
 
-	// 4. System prompt (only if Modelfile exists)
-	if hasModelfile && systemPrompt != "" {
-		fmt.Println("System")
-		fmt.Println(systemPrompt)
-		fmt.Println()
-	}
-
-	// 5. License
-	if license != "" {
-		fmt.Println("License")
-		fmt.Println(license)
-		fmt.Println()
-	}
-}
-
-// showModelfileOnly displays the complete Modelfile
-func showModelfileOnly(result map[string]interface{}, hasModelfile bool, modelfileContent string) {
-	if hasModelfile && modelfileContent != "" {
-		// Model is downloaded, show actual Modelfile
-		fmt.Println(modelfileContent)
-		return
-	}
-
-	// Model not downloaded, generate default Modelfile from ModelSpec
-	generateDefaultModelfile(result)
-}
-
-// generateDefaultModelfile creates a default Modelfile from ModelSpec
-func generateDefaultModelfile(result map[string]interface{}) {
-	fmt.Println("# Modelfile")
-	fmt.Println()
-	
-	// FROM directive
-	if model, ok := result["model"].(map[string]interface{}); ok {
-		if name, ok := model["name"].(string); ok {
-			fmt.Printf("FROM %s", name)
-			if tag, ok := result["tag"].(string); ok && tag != "" {
-				fmt.Printf(":%s", tag)
-			}
-			fmt.Println()
-			fmt.Println()
-		}
-		}
-		
-	// Description as comment
-	if desc, ok := result["description"].(string); ok && desc != "" {
-		fmt.Printf("# %s\n\n", desc)
-		}
-
-	// Default TEMPLATE
-	fmt.Println("TEMPLATE \"\"\"{{ .System }}")
-	fmt.Println("{{ .Prompt }}\"\"\"")
-	fmt.Println()
-
-	// Default SYSTEM
-	fmt.Println("SYSTEM \"\"\"You are a helpful AI assistant.\"\"\"")
-	fmt.Println()
-
-	// Model info as comments
-	if params, ok := result["parameters"].(float64); ok {
-		fmt.Printf("# Model Size: %.1fB parameters\n", params)
-	}
-	if ctxLen, ok := result["context_length"].(float64); ok {
-		fmt.Printf("# Context Length: %.0f tokens\n", ctxLen)
-	}
-	if vram, ok := result["required_vram"].(float64); ok {
-		fmt.Printf("# Required VRAM: %.0f GB\n", vram)
-	}
-	fmt.Println()
-
-	// Supported devices
-	if devices, ok := result["supported_devices"].([]interface{}); ok && len(devices) > 0 {
-		fmt.Print("# Supported Devices: ")
-		deviceStrs := make([]string, 0, len(devices))
-		for _, device := range devices {
-			if deviceStr, ok := device.(string); ok {
-				deviceStrs = append(deviceStrs, deviceStr)
-	}
-		}
-		fmt.Println(strings.Join(deviceStrs, ", "))
-	}
-}
-
-// showParametersOnly displays only the parameters section
-func showParametersOnly(hasModelfile bool, modelfileContent string) {
-	if !hasModelfile {
-		fmt.Println("No parameters defined (model not downloaded or no Modelfile)")
-		return
-	}
-
-	params := parseParametersFromModelfile(modelfileContent)
-	if len(params) == 0 {
-		fmt.Println("No parameters defined in Modelfile")
-		return
-	}
-
-	for key, value := range params {
-		fmt.Printf("%s %s\n", key, value)
-	}
-}
-
-// showTemplateOnly displays only the template section
-func showTemplateOnly(hasModelfile bool, modelfileContent string) {
-	if !hasModelfile {
-		fmt.Println("{{ .System }}")
-		fmt.Println("{{ .Prompt }}")
-		return
-	}
-
-	template := parseTemplateFromModelfile(modelfileContent)
-	if template == "" {
-		fmt.Println("{{ .System }}")
-		fmt.Println("{{ .Prompt }}")
-		return
-	}
-
-	fmt.Println(template)
-}
-
-// showSystemOnly displays only the system prompt
-func showSystemOnly(hasModelfile bool, modelfileContent string) {
-	if !hasModelfile {
-		fmt.Println("You are a helpful AI assistant.")
-		return
-	}
-
-	system := parseSystemFromModelfile(modelfileContent)
-	if system == "" {
-		fmt.Println("You are a helpful AI assistant.")
-		return
-	}
-
-	fmt.Println(system)
-}
-
-// showLicenseOnly displays only the license
-func showLicenseOnly(result map[string]interface{}) {
-	if license, ok := result["license"].(string); ok && license != "" {
-		fmt.Println(license)
+	// SYSTEM
+	if system, ok := info["system"].(string); ok && system != "" {
+		fmt.Printf("SYSTEM %s\n\n", system)
 	} else {
-		fmt.Println("No license information available.")
+		fmt.Println("SYSTEM You are a helpful AI assistant.")
+		fmt.Println()
+	}
+
+	// PARAMETER directives
+	if params, ok := info["inference_parameters"].(map[string]interface{}); ok && len(params) > 0 {
+		for key, value := range params {
+			fmt.Printf("PARAMETER %s %v\n", key, value)
+		}
+		fmt.Println()
+	}
+
+	// LICENSE (if exists)
+	if license, ok := info["license"].(string); ok && license != "" {
+		fmt.Printf("LICENSE \"\"\"\n%s\n\"\"\"\n", license)
 	}
 }
 
-// parseTemplateFromModelfile extracts the TEMPLATE directive from Modelfile
-func parseTemplateFromModelfile(content string) string {
-	lines := strings.Split(content, "\n")
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "TEMPLATE ") {
-			rest := strings.TrimPrefix(trimmed, "TEMPLATE ")
-			rest = strings.TrimSpace(rest)
-
-			// Handle triple quotes
-			if strings.HasPrefix(rest, "\"\"\"") {
-				rest = strings.TrimPrefix(rest, "\"\"\"")
-
-				// Single line
-				if strings.Contains(rest, "\"\"\"") {
-					return strings.Split(rest, "\"\"\"")[0]
-				}
-
-				// Multi-line
-				var parts []string
-				if rest != "" {
-					parts = append(parts, rest)
-				}
-
-				for j := i + 1; j < len(lines); j++ {
-					if strings.Contains(lines[j], "\"\"\"") {
-						ending := strings.Split(lines[j], "\"\"\"")[0]
-						if ending != "" {
-							parts = append(parts, ending)
-						}
-						break
-					}
-					parts = append(parts, lines[j])
-				}
-				return strings.Join(parts, "\n")
-			}
-
-			// Handle single quotes
-			if strings.HasPrefix(rest, "\"") && strings.HasSuffix(rest, "\"") {
-				return strings.Trim(rest, "\"")
-			}
-
-			return rest
+// displayParameters displays only the parameters section
+func displayParameters(info map[string]interface{}) {
+	if params, ok := info["inference_parameters"].(map[string]interface{}); ok && len(params) > 0 {
+		for key, value := range params {
+			fmt.Printf("%s %v\n", key, value)
 		}
+		return
 	}
-	
-	return ""
+
+	// No parameters defined
+	// Ollama shows nothing when no parameters are set, so we do the same
 }
 
-// parseSystemFromModelfile extracts the SYSTEM directive from Modelfile
-func parseSystemFromModelfile(content string) string {
-	lines := strings.Split(content, "\n")
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "SYSTEM ") {
-			rest := strings.TrimPrefix(trimmed, "SYSTEM ")
-			rest = strings.TrimSpace(rest)
-
-			// Handle triple quotes
-			if strings.HasPrefix(rest, "\"\"\"") {
-				rest = strings.TrimPrefix(rest, "\"\"\"")
-
-				// Single line
-				if strings.Contains(rest, "\"\"\"") {
-					return strings.Split(rest, "\"\"\"")[0]
-				}
-
-				// Multi-line
-				var parts []string
-				if rest != "" {
-					parts = append(parts, rest)
-				}
-
-				for j := i + 1; j < len(lines); j++ {
-					if strings.Contains(lines[j], "\"\"\"") {
-						ending := strings.Split(lines[j], "\"\"\"")[0]
-						if ending != "" {
-							parts = append(parts, ending)
-						}
-						break
-					}
-					parts = append(parts, lines[j])
-				}
-				return strings.Join(parts, "\n")
-			}
-
-			// Handle single quotes
-			if strings.HasPrefix(rest, "\"") && strings.HasSuffix(rest, "\"") {
-				return strings.Trim(rest, "\"")
-			}
-
-			return rest
-		}
+// displayTemplate displays only the template
+func displayTemplate(info map[string]interface{}) {
+	if template, ok := info["template"].(string); ok && template != "" {
+		fmt.Println(template)
+		return
 	}
 
-	return ""
+	// Default template
+	fmt.Println("{{ .System }}")
+	fmt.Println("{{ .Prompt }}")
 }
 
-// parseParametersFromModelfile extracts PARAMETER directives from Modelfile
-func parseParametersFromModelfile(content string) map[string]string {
-	params := make(map[string]string)
-	lines := strings.Split(content, "\n")
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip comments
-		if strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		if strings.HasPrefix(trimmed, "PARAMETER ") {
-			rest := strings.TrimPrefix(trimmed, "PARAMETER ")
-			parts := strings.Fields(rest)
-
-			if len(parts) >= 2 {
-				key := parts[0]
-				value := strings.Join(parts[1:], " ")
-				value = strings.Trim(value, "\"")
-				params[key] = value
-			}
-		}
+// displaySystem displays only the system prompt
+func displaySystem(info map[string]interface{}) {
+	if system, ok := info["system"].(string); ok && system != "" {
+		fmt.Println(system)
+		return
 	}
-	
-	return params
+
+	// Default system prompt
+	fmt.Println("You are a helpful AI assistant.")
+}
+
+// displayLicense displays only the license
+func displayLicense(info map[string]interface{}) {
+	if license, ok := info["license"].(string); ok && license != "" {
+		fmt.Println(license)
+	}
 }

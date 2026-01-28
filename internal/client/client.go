@@ -134,6 +134,25 @@ func (c *Client) ListModelsWithStats(deviceType api.DeviceType, showAll bool) (*
 	return &resp, nil
 }
 
+// ListDownloadedModels queries models that have been downloaded.
+//
+// This method returns only models that are currently downloaded and available locally.
+//
+// Returns:
+//   - Slice of downloaded model information
+//   - An error if the request fails
+func (c *Client) ListDownloadedModels() ([]api.DownloadedModel, error) {
+	var resp struct {
+		Models []api.DownloadedModel `json:"models"`
+	}
+	
+	if err := c.doRequest("GET", "/api/models/downloaded", nil, &resp); err != nil {
+		return nil, err
+	}
+	
+	return resp.Models, nil
+}
+
 // Run executes a model on the server with the given input.
 //
 // This method sends an inference request to the server, which loads the

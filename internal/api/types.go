@@ -116,6 +116,31 @@ type ListModelsResponse struct {
 	DetectedDevices []DeviceType `json:"detected_devices"`
 }
 
+// DownloadedModel represents a model that has been downloaded to local storage.
+//
+// This type contains information about models that are actually present in the
+// models directory, as opposed to all models in the registry.
+type DownloadedModel struct {
+	// ID is the internal model identifier (e.g., "qwen2.5-7b-instruct")
+	ID string `json:"id"`
+	
+	// Source is the SourceID used for downloading (e.g., "Qwen/Qwen2.5-7B-Instruct")
+	// This may differ from ID and represents the actual repository path
+	Source string `json:"source"`
+	
+	// Tag is the model version tag (currently always "latest")
+	Tag string `json:"tag"`
+	
+	// Size is the total size of the model directory in bytes
+	Size int64 `json:"size"`
+	
+	// DefaultEngine is the default inference engine for this model (e.g., "vllm:docker")
+	DefaultEngine string `json:"default_engine"`
+	
+	// ModifiedAt is the last modification time in RFC3339 format
+	ModifiedAt string `json:"modified"`
+}
+
 // RunRequest represents a request to execute a model with given input.
 //
 // This request initiates model inference, providing input data and optional

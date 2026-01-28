@@ -74,68 +74,16 @@ func runPull(opts *PullOptions) error {
 
 	fmt.Printf("Pulling %s...\n", opts.Model)
 
-	// Pull model with progress callback
+	// Pull model with simple progress display
 	var lastWasProgress bool
-	fileLines := make(map[string]int) // Track which line each file is on
-	lineOrder := []string{}           // Track order of files
-	currentLine := 0                  // Current cursor line (0-based from first progress)
 	
 	resp, err := client.Pull(opts.Model, "", func(message string) {
-		// Display progress messages with smart formatting
+		// Simple progress display: overwrite for progress, new line for status
 		isProgress := strings.Contains(message, "%")
 		
 		if isProgress {
-			// Extract filename from progress message (format: "Downloading filename: x%")
-			var currentFile string
-			if idx := strings.Index(message, ":"); idx != -1 {
-				currentFile = strings.TrimSpace(message[:idx])
-				currentFile = strings.TrimPrefix(currentFile, "Downloading ")
-			}
-			
-			if currentFile == "" {
-				// Fallback if we can't extract filename
+			// Progress message - overwrite current line
 			fmt.Printf("\r%s", message)
-				lastWasProgress = true
-				return
-			}
-			
-			lineNum, exists := fileLines[currentFile]
-			if !exists {
-				// New file - assign it the next line
-				lineNum = len(lineOrder)
-				fileLines[currentFile] = lineNum
-				lineOrder = append(lineOrder, currentFile)
-				
-				// If this is not the first file, move to new line
-				if lastWasProgress {
-					fmt.Println()
-					currentLine++
-				}
-				fmt.Printf("%s", message)
-			} else {
-				// Existing file - move to its line and update
-				if lineNum != currentLine {
-					// Move cursor up/down to the file's line
-					lineDiff := currentLine - lineNum
-					if lineDiff > 0 {
-						// Move up
-						fmt.Printf("\033[%dA", lineDiff)
-					} else if lineDiff < 0 {
-						// Move down
-						fmt.Printf("\033[%dB", -lineDiff)
-					}
-					currentLine = lineNum
-				}
-				// Overwrite the line
-				fmt.Printf("\r%s\033[K", message) // \033[K clears to end of line
-				
-				// Move cursor back to the bottom
-				if len(lineOrder) > 0 && currentLine < len(lineOrder)-1 {
-					linesToBottom := len(lineOrder) - 1 - currentLine
-					fmt.Printf("\033[%dB", linesToBottom)
-					currentLine = len(lineOrder) - 1
-				}
-			}
 			lastWasProgress = true
 		} else {
 			// Status message - print on new line
@@ -144,16 +92,12 @@ func runPull(opts *PullOptions) error {
 			}
 			fmt.Println(message)
 			lastWasProgress = false
-			// Reset tracking for next batch of files
-			fileLines = make(map[string]int)
-			lineOrder = []string{}
-			currentLine = 0
 		}
 	})
 	
-	// Add empty line after stream ends to separate from result
+	// Ensure we end with a newline
 	if lastWasProgress {
-		fmt.Println() // Ensure we end with a newline after progress
+		fmt.Println()
 	}
 	fmt.Println()
 	

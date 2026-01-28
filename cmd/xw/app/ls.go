@@ -5,20 +5,14 @@ import (
 	"os"
 	"sort"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/tsingmao/xw/internal/api"
 )
 
 // ListOptions holds options for the list command
 type ListOptions struct {
 	*GlobalOptions
-
-	// All shows all available models
-	All bool
-
-	// Device filters models by device type
-	Device string
 }
 
 // NewListCommand creates the list (ls) command.
@@ -52,39 +46,22 @@ func NewListCommand(globalOpts *GlobalOptions) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "ls",
-		Short: "List available models",
-		Long: `List available AI models in the xw registry.
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List downloaded models",
+		Long: `List models that have been downloaded.
 
-By default, lists models compatible with detected devices. Use --all to
-show all models regardless of device compatibility, or --device to filter
-by a specific device type.
-
-Supported device types:
-  - kunlun   : Baidu Kunlun XPU
-  - ascend   : Huawei Ascend NPU
-  - hygon    : Hygon processor
-  - loongson : Loongson (Longxin) processor`,
-		Example: `  # List models for detected devices
+Only shows models that are currently downloaded and available locally.
+For the full list of supported models, please visit the official website.`,
+		Example: `  # List downloaded models
   xw ls
-
-  # List all available models
-  xw ls -a
-
-  # List models for Kunlun devices
-  xw ls -d kunlun
-
-  # List models for Ascend devices
-  xw ls --device ascend`,
+  
+  # Same as ls
+  xw list`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(opts)
 		},
 	}
-
-	cmd.Flags().BoolVarP(&opts.All, "all", "a", false,
-		"show all models")
-	cmd.Flags().StringVarP(&opts.Device, "device", "d", "",
-		"filter by device type (kunlun, ascend, hygon, loongson)")
 
 	return cmd
 }
@@ -103,62 +80,60 @@ Supported device types:
 func runList(opts *ListOptions) error {
 	client := getClient(opts.GlobalOptions)
 
-	// Determine device type filter
-	deviceType := api.DeviceTypeAll
-	if opts.Device != "" {
-		deviceType = api.DeviceType(opts.Device)
-	}
-
-	// Query models from server (returns full response with statistics)
-	resp, err := client.ListModelsWithStats(deviceType, opts.All)
+	// Query downloaded models from server
+	models, err := client.ListDownloadedModels()
 	if err != nil {
 		return fmt.Errorf("failed to list models: %w", err)
 	}
 
-	if len(resp.Models) == 0 {
-		fmt.Println("No models found.")
+	if len(models) == 0 {
+		fmt.Println("No models downloaded.")
+		fmt.Println()
+		fmt.Println("Download a model with: xw pull <model>")
 		return nil
 	}
 
-	// Sort models by name for consistent output
-	sort.Slice(resp.Models, func(i, j int) bool {
-		return resp.Models[i].Name < resp.Models[j].Name
+	// Sort models by ID for consistent output
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
 	})
 
-	// Display models in a formatted table with download status
+	// Display models in a formatted table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tSIZE\tSTATUS\tDESCRIPTION")
+	fmt.Fprintln(w, "MODEL\tSOURCE\tTAG\tSIZE\tDEFAULT ENGINE\tMODIFIED")
 
-	for _, model := range resp.Models {
-		size := formatSize(model.Size)
-		status := formatStatus(model.Status)
+	for _, model := range models {
+		// Use default values if fields are empty
+		tag := model.Tag
+		if tag == "" {
+			tag = "latest"
+		}
+		
+		sizeStr := formatSize(model.Size)
+		
+		engine := model.DefaultEngine
+		if engine == "" {
+			engine = "vllm:docker"
+		}
+		
+		modifiedStr := "-"
+		if model.ModifiedAt != "" {
+			if t, err := time.Parse(time.RFC3339, model.ModifiedAt); err == nil {
+				modifiedStr = formatTimeAgo(t)
+			}
+		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			model.Name,
-			model.Version,
-			size,
-			status,
-			truncate(model.Description, 50))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			model.ID,
+			model.Source,
+			tag,
+			sizeStr,
+			engine,
+			modifiedStr)
 	}
 
 	w.Flush()
 	fmt.Println()
-
-	// Display statistics
-	if opts.All {
-		// When showing all models
-		fmt.Printf("Total: %d models in registry.\n", resp.TotalModels)
-	} else {
-		// When showing available models only
-		if len(resp.DetectedDevices) == 0 {
-			fmt.Printf("No AI accelerators detected. Showing %d of %d models. Use -a to list all.\n",
-				len(resp.Models), resp.TotalModels)
-		} else {
-			devicesStr := formatDeviceList(resp.DetectedDevices)
-			fmt.Printf("Detected: %s | Showing %d of %d models compatible with your hardware. Use -a to list all.\n",
-				devicesStr, resp.AvailableModels, resp.TotalModels)
-		}
-	}
 
 	return nil
 }
@@ -183,26 +158,6 @@ func formatSize(bytes int64) string {
 	}
 
 	return fmt.Sprintf("%.1f%cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-// formatDeviceList converts a device type slice to a human-readable string.
-//
-// Parameters:
-//   - devices: Slice of device types
-//
-// Returns:
-//   - Human-readable device list string
-func formatDeviceList(devices []api.DeviceType) string {
-	if len(devices) == 0 {
-		return "none"
-	}
-
-	result := string(devices[0])
-	for i := 1; i < len(devices); i++ {
-		result += ", " + string(devices[i])
-	}
-
-	return result
 }
 
 // formatStatus formats the download status of a model.
@@ -239,4 +194,55 @@ func truncate(s string, maxLen int) string {
 	}
 
 	return s[:maxLen-3] + "..."
+}
+
+// formatTimeAgo converts a time to a human-readable "time ago" string.
+//
+// Parameters:
+//   - t: The time to format
+//
+// Returns:
+//   - Human-readable time ago string
+func formatTimeAgo(t time.Time) string {
+	duration := time.Since(t)
+	
+	if duration < time.Minute {
+		return "just now"
+	} else if duration < time.Hour {
+		minutes := int(duration.Minutes())
+		if minutes == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", minutes)
+	} else if duration < 24*time.Hour {
+		hours := int(duration.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	} else if duration < 7*24*time.Hour {
+		days := int(duration.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	} else if duration < 30*24*time.Hour {
+		weeks := int(duration.Hours() / (24 * 7))
+		if weeks == 1 {
+			return "1 week ago"
+		}
+		return fmt.Sprintf("%d weeks ago", weeks)
+	} else if duration < 365*24*time.Hour {
+		months := int(duration.Hours() / (24 * 30))
+		if months == 1 {
+			return "1 month ago"
+		}
+		return fmt.Sprintf("%d months ago", months)
+	} else {
+		years := int(duration.Hours() / (24 * 365))
+		if years == 1 {
+			return "1 year ago"
+		}
+		return fmt.Sprintf("%d years ago", years)
+	}
 }
