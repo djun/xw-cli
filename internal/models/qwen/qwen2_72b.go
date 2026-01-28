@@ -38,11 +38,9 @@ var Qwen2_72B = &models.ModelSpec{
 		api.DeviceTypeKunlun,
 	},
 
+	// Backend configuration - only vLLM Docker is supported
 	Backends: []models.BackendOption{
-		{Type: models.BackendTypeMindIE, Mode: models.DeploymentModeDocker},
-		{Type: models.BackendTypeMindIE, Mode: models.DeploymentModeNative},
 		{Type: models.BackendTypeVLLM, Mode: models.DeploymentModeDocker},
-		{Type: models.BackendTypeVLLM, Mode: models.DeploymentModeNative},
 	},
 }
 

@@ -1,3 +1,8 @@
+// Package runtime provides runtime management for model instances.
+//
+// This package implements a manager that coordinates multiple runtime
+// implementations (e.g., vLLM-Docker, MindIE-Docker), handles device
+// allocation, and provides lifecycle management for model instances.
 package runtime
 
 import (
@@ -11,6 +16,7 @@ import (
 	"github.com/tsingmao/xw/internal/api"
 	"github.com/tsingmao/xw/internal/device"
 	"github.com/tsingmao/xw/internal/logger"
+	"github.com/tsingmao/xw/internal/models"
 )
 
 // Manager manages multiple runtime implementations.
@@ -186,6 +192,19 @@ func (m *Manager) Close() error {
 	return nil
 }
 
+// findInstanceRuntime searches all registered runtimes for an instance.
+//
+// This method iterates through all runtimes to find the one that manages
+// the specified instance.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - instanceID: ID of the instance to find
+//
+// Returns:
+//   - Runtime that manages the instance
+//   - Instance metadata
+//   - Error if instance not found
 func (m *Manager) findInstanceRuntime(ctx context.Context, instanceID string) (Runtime, *Instance, error) {
 	m.mu.RLock()
 	runtimes := make([]Runtime, 0, len(m.runtimes))
@@ -204,6 +223,11 @@ func (m *Manager) findInstanceRuntime(ctx context.Context, instanceID string) (R
 	return nil, nil, fmt.Errorf("instance %s not found", instanceID)
 }
 
+// maintenanceLoop runs periodic maintenance tasks in the background.
+//
+// This goroutine performs periodic maintenance such as checking instance
+// health, cleaning up stale resources, etc. It runs until the manager
+// is closed.
 func (m *Manager) maintenanceLoop() {
 	defer m.wg.Done()
 	
@@ -213,7 +237,7 @@ func (m *Manager) maintenanceLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			// Periodic maintenance
+			// Periodic maintenance tasks
 		case <-m.stopCh:
 			return
 		}
@@ -240,34 +264,87 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 		return nil, fmt.Errorf("run options cannot be nil")
 	}
 	
-	// Check if an instance of this model is already running
-	// Following ollama's design: one model = one instance
+	// Set default alias to model ID if not specified
+	if opts.Alias == "" {
+		opts.Alias = opts.ModelID
+	}
+	
+	// Check if alias conflicts with registered model IDs
+	if opts.Alias != opts.ModelID {
+		// Check if alias matches a model ID
+		// This prevents confusion where alias could be mistaken for a real model
+		spec := models.GetModelSpec(opts.Alias)
+		if spec != nil {
+			return nil, fmt.Errorf("alias '%s' conflicts with an existing model ID, please choose a different alias", opts.Alias)
+		}
+	}
+	
+	// Check if an instance with this alias already exists
 	ctx := context.Background()
 	instances, err := m.List(ctx)
 	if err != nil {
 		logger.Warn("Failed to check existing instances: %v", err)
 	} else {
 		for _, inst := range instances {
-			if inst.ModelID == opts.ModelID && inst.State == StateRunning {
-				logger.Info("Model %s is already running (instance: %s), returning existing instance", 
-					opts.ModelID, inst.ID)
-				
-				// Return the existing instance as RunInstance
+			existingAlias := inst.Alias
+			if existingAlias == "" {
+				existingAlias = inst.ModelID // Backward compatibility
+			}
+			
+			if existingAlias == opts.Alias {
+				// Found instance with same alias
+				if inst.State == StateRunning {
+					// Already running - error
+					return nil, fmt.Errorf("alias '%s' is already running. Stop it first with 'xw stop %s' or use a different --alias", 
+						opts.Alias, opts.Alias)
+				} else if inst.State == StateStopped {
+					// Stopped - restart it
+					logger.Info("Found stopped instance with alias '%s', restarting it", opts.Alias)
+					
+					// Get the runtime for this instance
+					runtimeName := inst.RuntimeName
+					m.mu.RLock()
+					rt, exists := m.runtimes[runtimeName]
+					m.mu.RUnlock()
+					
+					if !exists {
+						return nil, fmt.Errorf("runtime %s not available for instance", runtimeName)
+					}
+					
+					// Start the instance
+					startCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					defer cancel()
+					
+					if err := rt.Start(startCtx, inst.ID); err != nil {
+						return nil, fmt.Errorf("failed to start existing instance: %w", err)
+					}
+					
+					// Refresh instance data
+					refreshedInst, err := rt.Get(startCtx, inst.ID)
+					if err != nil {
+						return nil, fmt.Errorf("failed to get instance after start: %w", err)
+					}
+					
+					// Return the started instance
 				return &RunInstance{
-					ID:             inst.ID,
-					ModelID:        inst.ModelID,
-					BackendType:    inst.Metadata["backend_type"],
-					DeploymentMode: inst.Metadata["deployment_mode"],
-					State:          inst.State,
-					CreatedAt:      inst.CreatedAt,
-					StartedAt:      inst.StartedAt,
-					Port:           inst.Port,
-					Error:          inst.Error,
+						ID:             refreshedInst.ID,
+						ModelID:        refreshedInst.ModelID,
+						Alias:          refreshedInst.Alias,
+						BackendType:    refreshedInst.Metadata["backend_type"],
+						DeploymentMode: refreshedInst.Metadata["deployment_mode"],
+						State:          refreshedInst.State,
+						CreatedAt:      refreshedInst.CreatedAt,
+						StartedAt:      refreshedInst.StartedAt,
+						Port:           refreshedInst.Port,
+						Error:          refreshedInst.Error,
+						Config:         opts.AdditionalConfig,
 				}, nil
+				}
 			}
 		}
 	}
 	
+	// No existing instance with this alias - create new one
 	// Determine runtime name from backend type + deployment mode
 	// Format: "{backend}-{mode}", e.g., "vllm-docker", "mindie-docker"
 	runtimeName := fmt.Sprintf("%s-%s", opts.BackendType, opts.DeploymentMode)
@@ -282,7 +359,11 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 }
 
 	// Generate unique instance ID
-	instanceID := fmt.Sprintf("%s-%d", opts.ModelID, time.Now().Unix())
+	// If alias is set, use it as the instance ID; otherwise generate with timestamp
+	instanceID := opts.Alias
+	if instanceID == "" {
+		instanceID = fmt.Sprintf("%s-%d", opts.ModelID, time.Now().Unix())
+	}
 	
 	// Validate model path
 	if opts.ModelPath == "" {
@@ -360,6 +441,7 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 	params := &CreateParams{
 		InstanceID:     instanceID,
 		ModelID:        opts.ModelID,
+		Alias:          opts.Alias,
 		ModelPath:      opts.ModelPath,
 		ModelVersion:   "latest",
 		BackendType:    opts.BackendType,    // Pass backend type
@@ -368,7 +450,7 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 		Port:           opts.Port,
 		Environment:    make(map[string]string),
 		ExtraConfig:    extraConfig,
-	}
+}
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -392,6 +474,7 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 	runInstance := &RunInstance{
 		ID:             instance.ID,
 		ModelID:        instance.ModelID,
+		Alias:          instance.Alias,
 		BackendType:    opts.BackendType,
 		DeploymentMode: opts.DeploymentMode,
 		State:          instance.State,
@@ -405,6 +488,13 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 	return runInstance, nil
 }
 
+// ListCompat lists all instances in legacy API format.
+//
+// This method provides backward compatibility with the legacy API by
+// converting instances to the RunInstance format.
+//
+// Returns:
+//   - Array of RunInstance objects
 func (m *Manager) ListCompat() []*RunInstance {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -419,6 +509,7 @@ func (m *Manager) ListCompat() []*RunInstance {
 		result = append(result, &RunInstance{
 			ID:             inst.ID,
 			ModelID:        inst.ModelID,
+			Alias:          inst.Alias,
 			BackendType:    inst.Metadata["backend_type"],    // Read from metadata
 			DeploymentMode: inst.Metadata["deployment_mode"], // Read from metadata
 			State:          inst.State,
@@ -431,10 +522,131 @@ func (m *Manager) ListCompat() []*RunInstance {
 	return result
 }
 
+// StopCompat stops an instance with legacy API compatibility.
+//
+// This method provides backward compatibility by wrapping the Stop
+// method with a timeout.
+//
+// Parameters:
+//   - instanceID: ID of the instance to stop
+//
+// Returns:
+//   - Error if stop fails
 func (m *Manager) StopCompat(instanceID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return m.Stop(ctx, instanceID)
+}
+
+// RemoveCompat removes an instance with legacy API compatibility.
+//
+// This method provides backward compatibility by wrapping the Remove
+// method with a timeout. If force is true, it stops the instance
+// before removing it.
+//
+// Parameters:
+//   - instanceID: ID of the instance to remove
+//   - force: If true, stops the instance before removing
+//
+// Returns:
+//   - Error if remove fails
+func (m *Manager) RemoveCompat(instanceID string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
+	// If force is true, stop the instance first
+	if force {
+		// Ignore errors from stop - instance might already be stopped
+		_ = m.Stop(ctx, instanceID)
+	}
+	
+	return m.Remove(ctx, instanceID)
+}
+
+// findInstanceByAlias searches for an instance by its alias.
+//
+// This method searches all instances and matches by alias. For backward
+// compatibility, if an instance has no alias, it falls back to using
+// the ModelID.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - alias: The alias to search for
+//
+// Returns:
+//   - Instance metadata if found
+//   - Error if instance not found or search fails
+func (m *Manager) findInstanceByAlias(ctx context.Context, alias string) (*Instance, error) {
+	instances, err := m.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instances: %w", err)
+	}
+	
+	for _, inst := range instances {
+		instAlias := inst.Alias
+		if instAlias == "" {
+			instAlias = inst.ModelID // Backward compatibility
+		}
+		if instAlias == alias {
+			return inst, nil
+		}
+	}
+	
+	return nil, fmt.Errorf("instance with alias '%s' not found", alias)
+}
+
+// StopByAliasCompat stops an instance by its alias.
+//
+// This method provides a convenient way to stop instances using their
+// alias instead of the internal instance ID.
+//
+// Parameters:
+//   - alias: The alias of the instance to stop
+//
+// Returns:
+//   - Error if the instance is not found or stop fails
+func (m *Manager) StopByAliasCompat(alias string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
+	// Find instance by alias
+	inst, err := m.findInstanceByAlias(ctx, alias)
+	if err != nil {
+		return err
+	}
+	
+	return m.Stop(ctx, inst.ID)
+}
+
+// RemoveByAliasCompat removes an instance by its alias.
+//
+// This method provides a convenient way to remove instances using their
+// alias instead of the internal instance ID. If force is true, it stops
+// the instance before removing it.
+//
+// Parameters:
+//   - alias: The alias of the instance to remove
+//   - force: If true, stops the instance before removing
+//
+// Returns:
+//   - Error if the instance is not found or remove fails
+func (m *Manager) RemoveByAliasCompat(alias string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
+	// Find instance by alias
+	inst, err := m.findInstanceByAlias(ctx, alias)
+	if err != nil {
+		return err
+	}
+	
+	// If force is true, stop the instance first
+	if force {
+		// Ignore errors from stop - instance might already be stopped
+		_ = m.Stop(ctx, inst.ID)
+	}
+	
+	return m.Remove(ctx, inst.ID)
 }
 
 // parseDeviceList parses a device list string like "0" or "0,1,2,3" into device indices.
@@ -477,4 +689,38 @@ func parseDeviceList(deviceList string) ([]int, error) {
 	}
 	
 	return indices, nil
+}
+
+// GetLogsByAlias retrieves the log stream for an instance by its alias.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - alias: Instance alias
+//   - follow: If true, stream logs in real-time
+//
+// Returns:
+//   - LogStream reader
+//   - Error if instance not found
+func (m *Manager) GetLogsByAlias(ctx context.Context, alias string, follow bool) (LogStream, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	// Find instance by alias
+	instance, err := m.findInstanceByAlias(ctx, alias)
+	if err != nil {
+		return nil, err
+	}
+	if instance == nil {
+		return nil, fmt.Errorf("instance with alias '%s' not found", alias)
+	}
+	
+	// Get the runtime
+	runtimeName := instance.RuntimeName
+	rt, exists := m.runtimes[runtimeName]
+	if !exists {
+		return nil, fmt.Errorf("runtime %s not found", runtimeName)
+	}
+	
+	// Get logs from runtime
+	return rt.Logs(ctx, instance.ID, follow)
 }

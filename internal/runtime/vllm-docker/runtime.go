@@ -200,12 +200,13 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	
 	// If no command provided, use default vLLM command
 	if cmd == nil {
+		// Use instance ID (which is set to alias in manager) as the served model name for inference
 		cmd = []string{
 			"vllm",
 			"serve",
 			"/mnt/model",
 			"--served-model-name",
-			params.ModelID,
+			params.InstanceID,
 		}
 	}
 	
@@ -223,6 +224,7 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	labels := map[string]string{
 		"xw.runtime":         r.Name(),
 		"xw.model_id":        params.ModelID,
+		"xw.alias":           params.Alias,          // Store alias for inference
 		"xw.instance_id":     params.InstanceID,
 		"xw.backend_type":    params.BackendType,    // Store backend type
 		"xw.deployment_mode": params.DeploymentMode, // Store deployment mode
@@ -331,6 +333,7 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		RuntimeName:  r.Name(),
 		CreatedAt:    time.Now(),
 		ModelID:      params.ModelID,
+		Alias:        params.Alias,
 		ModelVersion: params.ModelVersion,
 		State:        runtime.StateCreated,
 		Port:         params.Port,
@@ -393,7 +396,7 @@ func (r *Runtime) Start(ctx context.Context, instanceID string) error {
 
 // Stop stops a running instance.
 //
-// This method gracefully stops the container with a 30-second timeout.
+// This method gracefully stops the container with a 15-minute timeout.
 // If the container doesn't stop within the timeout, it will be forcefully killed.
 //
 // Parameters:
@@ -414,38 +417,21 @@ func (r *Runtime) Stop(ctx context.Context, instanceID string) error {
 	containerID := instance.Metadata["container_id"]
 	logger.Info("Stopping vLLM Docker instance: %s", instanceID)
 	
-	// Stop with 30-second grace period
-	timeout := 30
+	// Stop with 15-minute grace period (900 seconds)
+	timeout := 900
 	stopOptions := container.StopOptions{Timeout: &timeout}
 	
 	if err := r.client.ContainerStop(ctx, containerID, stopOptions); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 	
-	logger.Info("vLLM Docker instance stopped, now removing container: %s", instanceID)
-	
-	// Immediately remove the container after stopping
-	removeOptions := container.RemoveOptions{
-		Force:         true, // Force remove even if still running
-		RemoveVolumes: true, // Clean up anonymous volumes
-	}
-	
-	if err := r.client.ContainerRemove(ctx, containerID, removeOptions); err != nil {
-		logger.Warn("Failed to remove container after stop: %v", err)
-		// Update state to stopped even if remove fails
+	// Update state to stopped (keep instance and container for later restart or removal)
 		r.mu.Lock()
 		instance.State = runtime.StateStopped
 		instance.StoppedAt = time.Now()
 		r.mu.Unlock()
-		return fmt.Errorf("container stopped but failed to remove: %w", err)
-	}
 	
-	// Unregister instance from runtime
-	r.mu.Lock()
-	delete(r.instances, instanceID)
-	r.mu.Unlock()
-	
-	logger.Info("vLLM Docker instance stopped and removed successfully: %s", instanceID)
+	logger.Info("vLLM Docker instance stopped successfully: %s (container kept for restart or removal)", instanceID)
 	
 	return nil
 }
@@ -663,6 +649,7 @@ func (r *Runtime) loadExistingContainers(ctx context.Context) error {
 			ID:          instanceID,
 			RuntimeName: r.Name(),
 			ModelID:     c.Labels["xw.model_id"],
+			Alias:       c.Labels["xw.alias"],
 			State:       state,
 			Port:        port,
 			CreatedAt:   createdAt,
@@ -707,4 +694,5 @@ type DeviceSandbox interface {
 func boolPtr(b bool) *bool {
 	return &b
 }
+
 

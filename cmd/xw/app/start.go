@@ -2,7 +2,10 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/tsingmao/xw/internal/models"
@@ -15,17 +18,20 @@ type StartOptions struct {
 	// Model is the model name to start
 	Model string
 	
-	// Engine is the inference engine (mindie, vllm)
+	// Alias is the instance alias for inference (defaults to model name)
+	Alias string
+	
+	// Engine is the inference engine in format "backend:mode" (e.g., "vllm:docker", "mindie:native")
 	Engine string
-
-	// Mode is the deployment mode (docker, native)
-	Mode string
 
 	// Device is the device list (e.g., "0", "0,1,2,3")
 	Device string
 
 	// MaxConcurrent is the maximum number of concurrent requests (0 for unlimited)
 	MaxConcurrent int
+	
+	// Detach runs the instance in the background (default: false, run in foreground with logs)
+	Detach bool
 }
 
 // NewStartCommand creates the start command.
@@ -41,11 +47,11 @@ type StartOptions struct {
 //	# Start a model with auto-selected backend
 //	xw start qwen2-0.5b
 //
-//	# Start with specific backend and mode
-//	xw start qwen2-7b --engine mindie --mode docker
+//	# Start with specific engine (backend:mode)
+//	xw start qwen2-7b --engine vllm:docker
 //
-//	# Start with custom port
-//	xw start qwen2-7b --port 8080
+//	# Start with custom alias
+//	xw start qwen2-7b --alias my-model
 //
 // Parameters:
 //   - globalOpts: Global options shared across commands
@@ -67,9 +73,15 @@ and native deployment modes. Starting the same model multiple times will return
 the existing instance rather than creating duplicates.
 
 Engine Selection:
+  Engine is specified as "backend:mode" (e.g., "vllm:docker", "mindie:native").
   If not specified, xw will automatically select the best available engine
   based on the model's preferences and your system configuration.
-  Available engines: vllm, mindie
+  
+  Available engines:
+    - vllm:docker   - vLLM in Docker container (recommended)
+    - vllm:native   - vLLM native installation
+    - mindie:docker - MindIE in Docker container
+    - mindie:native - MindIE native installation
 
 Device Selection:
   Specify which AI accelerator devices to use (e.g., --device 0 or --device 0,1,2,3)
@@ -79,12 +91,20 @@ Concurrency Control:
   Use --max-concurrent to limit concurrent inference requests per instance.
   Default: 0 (unlimited). Useful for controlling load on the inference service.
 
+Foreground vs Background:
+  By default, the instance runs in foreground mode with log streaming.
+  Press Ctrl+C to stop and remove the instance.
+  Use -d/--detach to run in background mode (keeps running after command exits).
+
 Examples:
-  # Start with auto-configuration
+  # Start in foreground (default) - shows logs, Ctrl+C to stop
   xw start qwen2-7b
 
-  # Start with specific engine and mode
-  xw start qwen2-7b --engine vllm --mode docker
+  # Start in background (detached)
+  xw start qwen2-7b -d
+
+  # Start with specific engine in foreground
+  xw start qwen2-7b --engine vllm:docker
 
   # Start on specific devices with concurrency limit
   xw start qwen2-72b --device 0,1,2,3 --max-concurrent 4`,
@@ -95,14 +115,16 @@ Examples:
 		},
 	}
 	
+	cmd.Flags().StringVar(&opts.Alias, "alias", "", 
+		"instance alias for inference (defaults to model name)")
 	cmd.Flags().StringVar(&opts.Engine, "engine", "", 
-		"inference engine (vllm, mindie)")
-	cmd.Flags().StringVar(&opts.Mode, "mode", "", 
-		"deployment mode (docker, native)")
+		"inference engine in format backend:mode (e.g., vllm:docker, mindie:native)")
 	cmd.Flags().StringVar(&opts.Device, "device", "", 
 		"device list (e.g., 0 or 0,1,2,3)")
 	cmd.Flags().IntVar(&opts.MaxConcurrent, "max-concurrent", 0, 
 		"maximum concurrent requests (0 for unlimited)")
+	cmd.Flags().BoolVarP(&opts.Detach, "detach", "d", false,
+		"run instance in the background (default: run in foreground with logs)")
 	
 	return cmd
 }
@@ -111,16 +133,31 @@ Examples:
 func runStart(opts *StartOptions) error {
 	client := getClient(opts.GlobalOptions)
 
-	// Convert engine string to backend type
+	// Parse engine string (format: "backend:mode")
 	var backendType models.BackendType
-	if opts.Engine != "" {
-		backendType = models.BackendType(opts.Engine)
-	}
-
-	// Convert mode string to type
 	var deploymentMode models.DeploymentMode
-	if opts.Mode != "" {
-		deploymentMode = models.DeploymentMode(opts.Mode)
+	
+	if opts.Engine != "" {
+		parts := strings.Split(opts.Engine, ":")
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "invalid engine format: %s (expected format: backend:mode, e.g., vllm:docker)\n", opts.Engine)
+			os.Exit(1)
+		}
+		backendType = models.BackendType(parts[0])
+		deploymentMode = models.DeploymentMode(parts[1])
+		
+		// Validate backend and mode
+		validBackends := map[string]bool{"vllm": true, "mindie": true}
+		validModes := map[string]bool{"docker": true, "native": true}
+		
+		if !validBackends[parts[0]] {
+			fmt.Fprintf(os.Stderr, "invalid backend: %s (valid: vllm, mindie)\n", parts[0])
+			os.Exit(1)
+		}
+		if !validModes[parts[1]] {
+			fmt.Fprintf(os.Stderr, "invalid mode: %s (valid: docker, native)\n", parts[1])
+			os.Exit(1)
+		}
 	}
 
 	// Prepare additional config for device and concurrency
@@ -135,6 +172,7 @@ func runStart(opts *StartOptions) error {
 	// Prepare run options as a map matching server's expected JSON structure
 	runOpts := map[string]interface{}{
 		"model_id":          opts.Model,
+		"alias":             opts.Alias,
 		"backend_type":      string(backendType),
 		"deployment_mode":   string(deploymentMode),
 		"interactive":       false,
@@ -161,20 +199,92 @@ func runStart(opts *StartOptions) error {
 
 	// Start the model instance via server API with SSE streaming
 	progressDisplay := newProgressDisplay()
-	err := client.RunModelWithSSE(runOpts, func(event string) {
+	instanceInfo, err := client.RunModelWithSSE(runOpts, func(event string) {
 		progressDisplay.update(event)
 	})
 	progressDisplay.finish()
 	
 	if err != nil {
-		return fmt.Errorf("failed to start model: %w", err)
+		// Print error directly without "Error: " prefix
+		fmt.Println()
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+	
+	// Get instance alias from response
+	var instanceAlias string
+	if instanceInfo != nil {
+		if alias, ok := instanceInfo["alias"].(string); ok && alias != "" {
+			instanceAlias = alias
+		} else if instanceID, ok := instanceInfo["instance_id"].(string); ok {
+			instanceAlias = instanceID
+		}
+	}
+	if instanceAlias == "" {
+		instanceAlias = opts.Alias
+		if instanceAlias == "" {
+			instanceAlias = opts.Model
+		}
 	}
 	
 	// Success
 	fmt.Println()
 	fmt.Println("✓ Model started successfully")
 	fmt.Println()
-	fmt.Println("Use 'xw ps' to view running instances")
+	
+	// If detach mode, just show info and return
+	if opts.Detach {
+		fmt.Println("Use 'xw ps' to view running instances")
+		return nil
+	}
+	
+	// Foreground mode: stream logs and handle Ctrl+C
+	fmt.Printf("Streaming logs from %s (press Ctrl+C to stop and remove)...\n", instanceAlias)
+	fmt.Println()
+	
+	// Setup signal handler for Ctrl+C
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	// Start log streaming in a goroutine
+	logDone := make(chan error, 1)
+	go func() {
+		err := client.StreamInstanceLogs(instanceAlias, true, func(logLine string) {
+			fmt.Print(logLine)
+			// Force flush stdout for real-time output
+			os.Stdout.Sync()
+		})
+		logDone <- err
+	}()
+	
+	// Wait for signal or log stream to end
+	select {
+	case <-sigChan:
+		fmt.Println()
+		fmt.Printf("\nReceived interrupt signal. Stopping and removing %s...\n", instanceAlias)
+		
+		// Stop the instance
+		if err := client.StopInstanceByAlias(instanceAlias, false); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to stop instance: %v\n", err)
+		}
+		
+		// Remove the instance
+		if err := client.RemoveInstanceByAlias(instanceAlias, true); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove instance: %v\n", err)
+		}
+		
+	case err := <-logDone:
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\nLog stream ended with error: %v\n", err)
+		} else {
+			fmt.Println("\nLog stream ended")
+		}
+		
+		// Auto cleanup when log stream ends
+		fmt.Printf("Cleaning up %s...\n", instanceAlias)
+		client.StopInstanceByAlias(instanceAlias, false)
+		client.RemoveInstanceByAlias(instanceAlias, true)
+	}
 	
 	return nil
 }
@@ -196,7 +306,7 @@ func newProgressDisplay() *progressDisplay {
 
 // update processes and displays an event
 func (pd *progressDisplay) update(event string) {
-	// DEBUG: 打印原始事件（可以后续删除）
+	// DEBUG: Print raw event (can be removed later)
 	// fmt.Printf("[DEBUG] event: %q\n", event)
 	
 	// Check if this is Docker pull output

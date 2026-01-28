@@ -200,10 +200,10 @@ func (a *Allocator) getAllocatedDevicesFromDocker() (map[int]bool, error) {
 		// Extract device indices from labels
 		if deviceIndicesStr, ok := c.Labels["xw.device_indices"]; ok && deviceIndicesStr != "" {
 			indices := parseDeviceIndices(deviceIndicesStr)
-			for _, idx := range indices {
-				allocated[idx] = true
-			}
+		for _, idx := range indices {
+			allocated[idx] = true
 		}
+	}
 	}
 
 	return allocated, nil
@@ -213,8 +213,8 @@ func (a *Allocator) getAllocatedDevicesFromDocker() (map[int]bool, error) {
 // Example: "0,1,2" -> []int{0, 1, 2}
 func parseDeviceIndices(s string) []int {
 	if s == "" {
-		return nil
-	}
+	return nil
+}
 
 	parts := strings.Split(s, ",")
 	indices := make([]int, 0, len(parts))
@@ -319,10 +319,10 @@ func (a *Allocator) GetAllocations() map[string][]DeviceInfo {
 			for _, idx := range indices {
 				if idx >= 0 && idx < len(a.devices) {
 					devices = append(devices, a.devices[idx])
-				}
+		}
 			}
 			if len(devices) > 0 {
-				result[instanceID] = devices
+		result[instanceID] = devices
 			}
 		}
 	}

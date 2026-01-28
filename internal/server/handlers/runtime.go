@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 	
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/tsingmao/xw/internal/hooks"
 	"github.com/tsingmao/xw/internal/logger"
 	"github.com/tsingmao/xw/internal/models"
@@ -26,6 +28,7 @@ import (
 func (h *Handler) RunModel(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
 		ModelID        string                 `json:"model_id"`
+		Alias          string                 `json:"alias"`
 		BackendType    models.BackendType     `json:"backend_type"`
 		DeploymentMode models.DeploymentMode  `json:"deployment_mode"`
 		Interactive    bool                   `json:"interactive"`
@@ -52,6 +55,7 @@ func (h *Handler) RunModel(w http.ResponseWriter, r *http.Request) {
 // runModelWithSSE handles model running with SSE streaming
 func (h *Handler) runModelWithSSE(w http.ResponseWriter, r *http.Request, reqBody *struct {
 	ModelID        string                 `json:"model_id"`
+	Alias          string                 `json:"alias"`
 	BackendType    models.BackendType     `json:"backend_type"`
 	DeploymentMode models.DeploymentMode  `json:"deployment_mode"`
 	Interactive    bool                   `json:"interactive"`
@@ -124,6 +128,7 @@ func (h *Handler) runModelWithSSE(w http.ResponseWriter, r *http.Request, reqBod
 // runModelAsync runs the model asynchronously and sends progress events
 func (h *Handler) runModelAsync(ctx context.Context, reqBody *struct {
 	ModelID        string                 `json:"model_id"`
+	Alias          string                 `json:"alias"`
 	BackendType    models.BackendType     `json:"backend_type"`
 	DeploymentMode models.DeploymentMode  `json:"deployment_mode"`
 	Interactive    bool                   `json:"interactive"`
@@ -222,6 +227,7 @@ func (h *Handler) runModelAsync(ctx context.Context, reqBody *struct {
 	// Create run options
 	opts := &runtime.RunOptions{
 		ModelID:          reqBody.ModelID,
+		Alias:            reqBody.Alias,
 		ModelPath:        modelPath,
 		BackendType:      string(reqBody.BackendType),
 		DeploymentMode:   string(reqBody.DeploymentMode),
@@ -235,7 +241,7 @@ func (h *Handler) runModelAsync(ctx context.Context, reqBody *struct {
 	// Pass config directory to runtime manager, just like downloader uses h.config.Storage.ModelsDir
 	instance, err := h.runtimeManager.Run(h.config.Storage.ConfigDir, opts)
 	if err != nil {
-		errorCh <- fmt.Errorf("failed to start model: %w", err)
+		errorCh <- err
 		return
 	}
 	
@@ -258,6 +264,7 @@ func (h *Handler) runModelAsync(ctx context.Context, reqBody *struct {
 // runModelJSON handles model running with regular JSON response
 func (h *Handler) runModelJSON(w http.ResponseWriter, reqBody *struct {
 	ModelID        string                 `json:"model_id"`
+	Alias          string                 `json:"alias"`
 	BackendType    models.BackendType     `json:"backend_type"`
 	DeploymentMode models.DeploymentMode  `json:"deployment_mode"`
 	Interactive    bool                   `json:"interactive"`
@@ -276,6 +283,7 @@ func (h *Handler) runModelJSON(w http.ResponseWriter, reqBody *struct {
 	
 	opts := &runtime.RunOptions{
 		ModelID:          reqBody.ModelID,
+		Alias:            reqBody.Alias,
 		BackendType:      string(reqBody.BackendType),
 		DeploymentMode:   string(reqBody.DeploymentMode),
 		Port:             port,
@@ -330,7 +338,8 @@ func (h *Handler) ListInstances(w http.ResponseWriter, r *http.Request) {
 // StopInstance handles requests to stop a running instance
 func (h *Handler) StopInstance(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
-		InstanceID string `json:"instance_id"`
+		InstanceID string `json:"instance_id"` // Deprecated: use alias instead
+		Alias      string `json:"alias"`
 		Force      bool   `json:"force"`
 	}
 	
@@ -339,12 +348,18 @@ func (h *Handler) StopInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	if reqBody.InstanceID == "" {
-		h.WriteError(w, "instance_id is required", http.StatusBadRequest)
+	// Support both alias (new) and instance_id (legacy)
+	identifier := reqBody.Alias
+	if identifier == "" {
+		identifier = reqBody.InstanceID
+	}
+	
+	if identifier == "" {
+		h.WriteError(w, "alias or instance_id is required", http.StatusBadRequest)
 		return
 	}
 	
-	if err := h.runtimeManager.StopCompat(reqBody.InstanceID); err != nil {
+	if err := h.runtimeManager.StopByAliasCompat(identifier); err != nil {
 		h.WriteError(w, fmt.Sprintf("Failed to stop instance: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -356,10 +371,114 @@ func (h *Handler) StopInstance(w http.ResponseWriter, r *http.Request) {
 	h.WriteJSON(w, response, http.StatusOK)
 }
 
+// RemoveInstance handles HTTP requests to remove a model instance.
+//
+// HTTP Method: POST
+// Path: /api/runtime/remove
+// Content-Type: application/json
+func (h *Handler) RemoveInstance(w http.ResponseWriter, r *http.Request) {
+	var reqBody struct {
+		InstanceID string `json:"instance_id"` // Deprecated: use alias instead
+		Alias      string `json:"alias"`
+		Force      bool   `json:"force"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		h.WriteError(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Support both alias (new) and instance_id (legacy)
+	identifier := reqBody.Alias
+	if identifier == "" {
+		identifier = reqBody.InstanceID
+	}
+	
+	if identifier == "" {
+		h.WriteError(w, "alias or instance_id is required", http.StatusBadRequest)
+		return
+	}
+	
+	if err := h.runtimeManager.RemoveByAliasCompat(identifier, reqBody.Force); err != nil {
+		h.WriteError(w, fmt.Sprintf("Failed to remove instance: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	response := map[string]interface{}{
+		"message": "Instance removed successfully",
+	}
+	
+	h.WriteJSON(w, response, http.StatusOK)
+}
+
 // escapeSSE escapes special characters for SSE
 func (h *Handler) escapeSSE(s string) string {
 	// Replace newlines with spaces for SSE
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", "")
 	return s
+}
+
+// StreamLogs streams instance logs.
+//
+// HTTP Method: GET
+// Path: /api/runtime/logs?alias=ALIAS&follow=true|false
+// Accept: text/plain or text/event-stream
+func (h *Handler) StreamLogs(w http.ResponseWriter, r *http.Request) {
+	alias := r.URL.Query().Get("alias")
+	if alias == "" {
+		h.WriteError(w, "alias parameter is required", http.StatusBadRequest)
+		return
+	}
+	
+	// Get follow parameter (default: true for backward compatibility)
+	follow := r.URL.Query().Get("follow") != "false"
+	
+	// Get log stream from runtime manager
+	logStream, err := h.runtimeManager.GetLogsByAlias(r.Context(), alias, follow)
+	if err != nil {
+		h.WriteError(w, fmt.Sprintf("Failed to get logs: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer logStream.Close()
+	
+	// Set headers for streaming
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	
+	// Flush headers immediately
+	flusher, hasFlusher := w.(http.Flusher)
+	if hasFlusher {
+		flusher.Flush()
+	}
+	
+	// Create a flushing writer to ensure real-time streaming
+	flushWriter := &flushingWriter{
+		writer:  w,
+		flusher: flusher,
+	}
+	
+	// Use stdcopy to demultiplex Docker's log stream format
+	// Docker streams stdout and stderr in a multiplexed format with 8-byte headers
+	// stdcopy.StdCopy properly separates and writes stdout and stderr to the response
+	_, err = stdcopy.StdCopy(flushWriter, flushWriter, logStream)
+	if err != nil && err != io.EOF {
+		logger.Error("Error streaming logs: %v", err)
+	}
+}
+
+// flushingWriter wraps http.ResponseWriter to flush after each write
+type flushingWriter struct {
+	writer  http.ResponseWriter
+	flusher http.Flusher
+}
+
+func (fw *flushingWriter) Write(p []byte) (n int, err error) {
+	n, err = fw.writer.Write(p)
+	if err == nil && fw.flusher != nil {
+		fw.flusher.Flush()
+	}
+	return n, err
 }

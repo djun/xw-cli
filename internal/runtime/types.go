@@ -23,6 +23,7 @@ type Runtime interface {
 type CreateParams struct {
 	InstanceID     string
 	ModelID        string
+	Alias          string // Instance alias for inference (defaults to ModelID)
 	ModelPath      string
 	ModelVersion   string
 	BackendType    string // Backend type (e.g., "vllm")
@@ -49,6 +50,7 @@ type Instance struct {
 	RuntimeName  string
 	CreatedAt    time.Time
 	ModelID      string
+	Alias        string // Instance alias for inference
 	ModelVersion string
 	State        InstanceState
 	StartedAt    time.Time
@@ -83,6 +85,7 @@ type LogStream interface {
 // RunOptions contains legacy API parameters (for handlers).
 type RunOptions struct {
 	ModelID          string
+	Alias            string // Instance alias for inference (defaults to ModelID)
 	ModelPath        string // Path to the model files on disk
 	BackendType      string
 	DeploymentMode   string
@@ -95,6 +98,7 @@ type RunOptions struct {
 type RunInstance struct {
 	ID             string                 `json:"id"`
 	ModelID        string                 `json:"model_id"`
+	Alias          string                 `json:"alias"` // Instance alias for inference
 	BackendType    string                 `json:"backend_type"`
 	DeploymentMode string                 `json:"deployment_mode"`
 	State          InstanceState          `json:"state"`

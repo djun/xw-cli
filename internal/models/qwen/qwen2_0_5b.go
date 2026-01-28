@@ -45,12 +45,9 @@ var Qwen2_0_5B = &models.ModelSpec{
 		api.DeviceTypeKunlun,
 	},
 
-	// Backend priority list - Docker first for ease of use
+	// Backend configuration - only vLLM Docker is supported
 	Backends: []models.BackendOption{
 		{Type: models.BackendTypeVLLM, Mode: models.DeploymentModeDocker},
-		{Type: models.BackendTypeVLLM, Mode: models.DeploymentModeNative},
-		{Type: models.BackendTypeMindIE, Mode: models.DeploymentModeDocker},
-		{Type: models.BackendTypeMindIE, Mode: models.DeploymentModeNative},
 	},
 }
 

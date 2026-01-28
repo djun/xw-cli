@@ -165,6 +165,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/runtime/run", h.RunModel)
 	mux.HandleFunc("/api/runtime/instances", h.ListInstances)
 	mux.HandleFunc("/api/runtime/stop", h.StopInstance)
+	mux.HandleFunc("/api/runtime/remove", h.RemoveInstance)
+	mux.HandleFunc("/api/runtime/logs", h.StreamLogs)
 	
 	// OpenAI-compatible API endpoints
 	// These endpoints follow the OpenAI API specification and are proxied

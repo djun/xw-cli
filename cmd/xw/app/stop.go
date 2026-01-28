@@ -10,8 +10,8 @@ import (
 type StopOptions struct {
 	*GlobalOptions
 
-	// InstanceID is the instance to stop
-	InstanceID string
+	// Alias is the instance alias to stop
+	Alias string
 
 	// Force forces stop even if instance is in use
 	Force bool
@@ -23,15 +23,15 @@ type StopOptions struct {
 //
 // Usage:
 //
-//	xw stop INSTANCE_ID [OPTIONS]
+//	xw stop ALIAS [OPTIONS]
 //
 // Examples:
 //
 //	# Stop an instance
-//	xw stop qwen2-0.5b-mindie-docker
+//	xw stop my-model
 //
 //	# Force stop
-//	xw stop qwen2-7b-vllm-native --force
+//	xw stop test --force
 //
 // Parameters:
 //   - globalOpts: Global options shared across commands
@@ -44,24 +44,25 @@ func NewStopCommand(globalOpts *GlobalOptions) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "stop INSTANCE_ID",
+		Use:   "stop ALIAS",
 		Short: "Stop a running model instance",
-		Long: `Stop a running model instance by its instance ID.
+		Long: `Stop a running model instance by its alias.
 
-The instance ID can be found using 'xw ps'. Stopping an instance will:
-  - Terminate the backend process/container
-  - Free up system resources
-  - Remove the instance from the running list
+The alias can be found using 'xw ps'. Stopping an instance will:
+  - Stop the backend process/container
+  - Keep the instance configuration
+  - The instance can be viewed with 'xw ps --all'
 
+To completely remove the instance, use 'xw rmi ALIAS' after stopping.
 Use --force to stop an instance even if it's currently processing requests.`,
 		Example: `  # Stop an instance
-  xw stop qwen2-0.5b-mindie-docker
+  xw stop my-model
 
   # Force stop
-  xw stop qwen2-7b-vllm-native --force`,
+  xw stop test --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.InstanceID = args[0]
+			opts.Alias = args[0]
 			return runStop(opts)
 		},
 	}
@@ -76,13 +77,13 @@ Use --force to stop an instance even if it's currently processing requests.`,
 func runStop(opts *StopOptions) error {
 	client := getClient(opts.GlobalOptions)
 
-	// Stop the instance via server API
-	err := client.StopInstance(opts.InstanceID, opts.Force)
+	// Stop the instance via server API (using alias)
+	err := client.StopInstanceByAlias(opts.Alias, opts.Force)
 	if err != nil {
 		return fmt.Errorf("failed to stop instance: %w", err)
 	}
 
-	fmt.Printf("Stopped instance: %s\n", opts.InstanceID)
+	fmt.Printf("Stopped instance: %s\n", opts.Alias)
 
 	return nil
 }

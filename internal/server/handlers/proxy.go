@@ -340,24 +340,33 @@ func (p *ProxyHandler) findInstanceByModel(ctx context.Context, modelName string
 	// Normalize model name for comparison
 	modelNameLower := strings.ToLower(modelName)
 
-	// First pass: look for exact match
+	// First pass: look for exact alias match (primary lookup method)
 	for _, inst := range instances {
 		if inst.State == "running" {
-			instModelLower := strings.ToLower(inst.ModelID)
-			if instModelLower == modelNameLower {
-				logger.Debug("Found exact match: instance %s for model %s", inst.ID, modelName)
+			// Use alias for matching, fallback to ModelID if alias is empty (backward compatibility)
+			alias := inst.Alias
+			if alias == "" {
+				alias = inst.ModelID
+			}
+			aliasLower := strings.ToLower(alias)
+			if aliasLower == modelNameLower {
+				logger.Debug("Found exact alias match: instance %s (alias: %s) for model %s", inst.ID, alias, modelName)
 				return inst, nil
 			}
 		}
 	}
 
-	// Second pass: look for prefix match
+	// Second pass: look for prefix match on alias
 	// This handles cases like "qwen2-7b" matching "qwen2-7b-instruct"
 	for _, inst := range instances {
 		if inst.State == "running" {
-			instModelLower := strings.ToLower(inst.ModelID)
-			if strings.HasPrefix(instModelLower, modelNameLower) || strings.HasPrefix(modelNameLower, instModelLower) {
-				logger.Debug("Found prefix match: instance %s (model: %s) for requested model %s", inst.ID, inst.ModelID, modelName)
+			alias := inst.Alias
+			if alias == "" {
+				alias = inst.ModelID
+			}
+			aliasLower := strings.ToLower(alias)
+			if strings.HasPrefix(aliasLower, modelNameLower) || strings.HasPrefix(modelNameLower, aliasLower) {
+				logger.Debug("Found prefix match: instance %s (alias: %s) for requested model %s", inst.ID, alias, modelName)
 				return inst, nil
 			}
 		}
