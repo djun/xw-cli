@@ -16,16 +16,16 @@ import (
 	"github.com/tsingmao/xw/internal/runtime"
 )
 
-// RunModel handles requests to start a model instance
+// StartModel handles requests to start a model instance
 //
 // This endpoint supports Server-Sent Events (SSE) for streaming progress updates
 // during model startup, Docker image pulling, etc.
 //
 // HTTP Method: POST
-// Path: /api/runtime/run
+// Path: /api/runtime/start
 // Content-Type: application/json
 // Accept: text/event-stream (for SSE) or application/json
-func (h *Handler) RunModel(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) StartModel(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
 		ModelID        string                 `json:"model_id"`
 		Alias          string                 `json:"alias"`

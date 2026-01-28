@@ -239,62 +239,6 @@ func (c *Client) GetModel(modelID string) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// UpdateModelfile updates the Modelfile for a specific model.
-//
-// This method sends the modified Modelfile content to the server which will:
-//   - Validate the Modelfile syntax and content
-//   - Write the new content to the model's Modelfile on disk
-//   - Return success or validation errors
-//
-// Parameters:
-//   - modelID: The model identifier (e.g., "qwen2-0.5b")
-//   - content: The new Modelfile content
-//
-// Returns:
-//   - nil if update succeeds
-//   - error if validation fails or update fails
-//
-// Example:
-//
-//	err := client.UpdateModelfile("qwen2-0.5b", newContent)
-//	if err != nil {
-//	    log.Printf("Failed to update Modelfile: %v", err)
-//	}
-func (c *Client) UpdateModelfile(modelID, content string) error {
-	url := c.baseURL + "/api/models/update-modelfile"
-	
-	reqBody := map[string]string{
-		"model":   modelID,
-		"content": content,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to xw server at %s", c.baseURL)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp api.ErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
-			return fmt.Errorf("%s", errResp.Error)
-		}
-		return fmt.Errorf("server error: status %d", resp.StatusCode)
-	}
-
-	return nil
-}
 
 // Pull downloads and installs a model with streaming progress updates.
 //
@@ -457,7 +401,7 @@ func (c *Client) doRequest(method, path string, reqBody, respBody interface{}) e
 //   - error if the request fails
 func (c *Client) RunModel(opts interface{}) (map[string]interface{}, error) {
 	var result map[string]interface{}
-	if err := c.doRequest("POST", "/api/runtime/run", opts, &result); err != nil {
+	if err := c.doRequest("POST", "/api/runtime/start", opts, &result); err != nil {
 		return nil, err
 	}
 
@@ -480,7 +424,7 @@ func (c *Client) RunModelWithSSE(opts interface{}, progressCallback func(string)
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := c.baseURL + "/api/runtime/run"
+	url := c.baseURL + "/api/runtime/start"
 	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

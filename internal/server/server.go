@@ -160,10 +160,9 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/models/downloaded", h.ListDownloadedModels)
 	mux.HandleFunc("/api/models/show", h.ShowModel)
 	mux.HandleFunc("/api/models/pull", h.PullModel)
-	mux.HandleFunc("/api/models/update-modelfile", h.UpdateModelfile)
 	
 	// Runtime management endpoints
-	mux.HandleFunc("/api/runtime/run", h.RunModel)
+	mux.HandleFunc("/api/runtime/start", h.StartModel)
 	mux.HandleFunc("/api/runtime/instances", h.ListInstances)
 	mux.HandleFunc("/api/runtime/stop", h.StopInstance)
 	mux.HandleFunc("/api/runtime/remove", h.RemoveInstance)
