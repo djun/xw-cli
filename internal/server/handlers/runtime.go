@@ -335,6 +335,110 @@ func (h *Handler) ListInstances(w http.ResponseWriter, r *http.Request) {
 	h.WriteJSON(w, response, http.StatusOK)
 }
 
+// CheckInstanceReady checks if a model instance is ready to serve requests.
+//
+// This endpoint verifies that the instance's endpoint is accessible and responding.
+// It's useful for waiting for an instance to fully start before sending requests.
+//
+// HTTP Method: GET
+// Path: /api/runtime/check-ready?alias=ALIAS
+//
+// Query parameters:
+//   - alias: The instance alias to check
+//
+// Response:
+//
+//	{
+//	  "ready": true,
+//	  "alias": "qwen2.5-7b-instruct",
+//	  "endpoint": "http://localhost:10881",
+//	  "message": "Instance is ready"
+//	}
+func (h *Handler) CheckInstanceReady(w http.ResponseWriter, r *http.Request) {
+	// Get alias from query parameter
+	alias := r.URL.Query().Get("alias")
+	if alias == "" {
+		h.WriteError(w, "alias parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get instance from runtime manager
+	instances := h.runtimeManager.ListCompat()
+	var instance *runtime.RunInstance
+	for _, inst := range instances {
+		if inst.Alias == alias {
+			instance = inst
+			break
+		}
+	}
+
+	if instance == nil {
+		h.WriteError(w, fmt.Sprintf("Instance not found: %s", alias), http.StatusNotFound)
+		return
+	}
+
+	// Check if instance state is running
+	if instance.State != runtime.StateRunning {
+		h.WriteJSON(w, map[string]interface{}{
+			"ready":    false,
+			"alias":    alias,
+			"state":    instance.State,
+			"message":  fmt.Sprintf("Instance is in %s state", instance.State),
+		}, http.StatusOK)
+		return
+	}
+
+	// Build endpoint URL from port
+	endpoint := fmt.Sprintf("http://localhost:%d", instance.Port)
+	
+	// Check if endpoint is accessible
+	ready := h.checkEndpointAccessible(endpoint)
+
+	response := map[string]interface{}{
+		"ready":    ready,
+		"alias":    alias,
+		"endpoint": endpoint,
+	}
+
+	if ready {
+		response["message"] = "Instance is ready"
+	} else {
+		response["message"] = "Instance is starting, endpoint not ready yet"
+	}
+
+	h.WriteJSON(w, response, http.StatusOK)
+}
+
+// checkEndpointAccessible checks if an HTTP endpoint is accessible
+func (h *Handler) checkEndpointAccessible(endpoint string) bool {
+	// Check the health endpoint
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+
+	// Only check /health endpoint
+	healthURL := endpoint + "/health"
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	// Accept 20x status codes as success
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return true
+	}
+
+	// 404 also counts as success (for engines without /health endpoint)
+	// but we'll log a warning
+	if resp.StatusCode == http.StatusNotFound {
+		logger.Warn("Endpoint %s returned 404 - engine may not implement /health", healthURL)
+		return true
+	}
+
+	return false
+}
+
 // StopInstance handles requests to stop a running instance
 func (h *Handler) StopInstance(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {

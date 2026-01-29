@@ -240,6 +240,47 @@ func (c *Client) GetModel(modelID string) (map[string]interface{}, error) {
 }
 
 
+// CheckInstanceReady checks if a model instance is ready to serve requests.
+//
+// This method verifies that the instance's endpoint is accessible and responding.
+//
+// Parameters:
+//   - alias: The instance alias to check
+//
+// Returns:
+//   - true if the instance is ready, false otherwise
+//   - error if the request fails
+func (c *Client) CheckInstanceReady(alias string) (bool, error) {
+	url := fmt.Sprintf("%s/api/runtime/check-ready?alias=%s", c.baseURL, alias)
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create request: %w", err)
+	}
+	
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("cannot connect to xw server at %s", c.baseURL)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+	
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	ready, ok := result["ready"].(bool)
+	if !ok {
+		return false, fmt.Errorf("invalid response format")
+	}
+	
+	return ready, nil
+}
+
 // Pull downloads and installs a model with streaming progress updates.
 //
 // This method downloads a model from ModelScope with real-time progress

@@ -71,6 +71,7 @@ xw server is running before executing commands.`,
 	cmd.AddCommand(
 		NewListCommand(opts),
 		NewShowCommand(opts),
+		NewRunCommand(opts),
 		NewStartCommand(opts),
 		NewPsCommand(opts),
 		NewStopCommand(opts),

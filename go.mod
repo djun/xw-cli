@@ -6,6 +6,7 @@ require github.com/spf13/cobra v1.10.2
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/creack/pty v1.1.24 // indirect

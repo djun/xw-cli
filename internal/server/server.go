@@ -164,6 +164,7 @@ func (s *Server) Start() error {
 	// Runtime management endpoints
 	mux.HandleFunc("/api/runtime/start", h.StartModel)
 	mux.HandleFunc("/api/runtime/instances", h.ListInstances)
+	mux.HandleFunc("/api/runtime/check-ready", h.CheckInstanceReady)
 	mux.HandleFunc("/api/runtime/stop", h.StopInstance)
 	mux.HandleFunc("/api/runtime/remove", h.RemoveInstance)
 	mux.HandleFunc("/api/runtime/logs", h.StreamLogs)
