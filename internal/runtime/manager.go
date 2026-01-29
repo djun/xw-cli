@@ -437,6 +437,7 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 				Index:      dev.Index,
 				PCIAddress: dev.BusAddress,
 				ModelName:  dev.ModelName,
+				ConfigKey:  dev.ConfigKey,
 				Properties: dev.Properties,
 			})
 		}
@@ -460,6 +461,7 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 				Index:      dev.Index,
 				PCIAddress: dev.BusAddress,
 				ModelName:  dev.ModelName,
+				ConfigKey:  dev.ConfigKey,
 				Properties: dev.Properties,
 			}
 		}

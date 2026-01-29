@@ -234,6 +234,12 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 			"--served-model-name",
 			params.InstanceID,
 		}
+		
+		// Add chip-specific parameters
+		// For Ascend 310P, force float16 dtype
+		if len(params.Devices) > 0 && params.Devices[0].ConfigKey == "ascend-310p" {
+			cmd = append(cmd, "--dtype", "float16")
+		}
 	}
 	
 	// Prepare device indices string for container labels

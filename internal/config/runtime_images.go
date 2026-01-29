@@ -57,11 +57,11 @@ func GetDefaultRuntimeImagesConfig() RuntimeImagesConfig {
 		"ascend-910b": {
 			"vllm": {
 				"arm64": "quay.io/ascend/vllm-ascend:v0.11.0rc0-arm64",
-				"amd64": "quay.io/ascend/vllm-ascend:v0.11.0rc0-amd64",
+				"amd64": "NONE",
 			},
 			"mindie": {
 				"arm64": "harbor.tsingmao.com/xuanwu/mindie:2.2.RC1-800I-A2-py311-openeuler24.03-lts-arm64",
-				"amd64": "harbor.tsingmao.com/xuanwu/mindie:2.2.RC1-800I-A2-py311-openeuler24.03-lts-amd64",
+				"amd64": "NONE",
 			},
 		},
 		
@@ -69,11 +69,11 @@ func GetDefaultRuntimeImagesConfig() RuntimeImagesConfig {
 		"ascend-310p": {
 			"vllm": {
 				"arm64": "quay.io/ascend/vllm-ascend:main-310p",
-				"amd64": "quay.io/ascend/vllm-ascend-310p:v0.11.0rc0-amd64",
+				"amd64": "NONE",
 			},
 			"mindie": {
-				"arm64": "harbor.tsingmao.com/xuanwu/mindie:2.2.RC1-310p-py311-openeuler24.03-lts-arm64",
-				"amd64": "harbor.tsingmao.com/xuanwu/mindie:2.2.RC1-310p-py311-openeuler24.03-lts-amd64",
+				"arm64": "harbor.tsingmao.com/xuanwu/mindie:2.3.0-300I-Duo-py311-openeuler24.03-lts",
+				"amd64": "NONE",
 			},
 		},
 	}
