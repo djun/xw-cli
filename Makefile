@@ -15,6 +15,9 @@ LDFLAGS := -ldflags "\
 	-X main.GitCommit=$(GIT_COMMIT) \
 	-s -w"
 
+# Build environment for static linking
+BUILD_ENV := CGO_ENABLED=0
+
 # Directories
 BIN_DIR := bin
 INSTALL_DIR := /usr/local/bin
@@ -42,7 +45,7 @@ help: ## Display this help message
 build: ## Build xw binary (includes server)
 	@echo "Building xw..."
 	@mkdir -p $(BIN_DIR)
-	go build $(LDFLAGS) -o $(CLI_TARGET) ./cmd/xw
+	$(BUILD_ENV) go build $(LDFLAGS) -o $(CLI_TARGET) ./cmd/xw
 	@echo "✓ xw binary built: $(CLI_TARGET)"
 
 .PHONY: cli
@@ -194,11 +197,11 @@ release: clean ## Build release binaries for multiple platforms
 	@echo "Building release binaries..."
 	@mkdir -p $(BIN_DIR)/release
 	
-	# Linux amd64
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BIN_DIR)/release/xw-linux-amd64 ./cmd/xw
+	# Linux amd64 (static build)
+	$(BUILD_ENV) GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BIN_DIR)/release/xw-linux-amd64 ./cmd/xw
 	
-	# Linux arm64
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BIN_DIR)/release/xw-linux-arm64 ./cmd/xw
+	# Linux arm64 (static build)
+	$(BUILD_ENV) GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BIN_DIR)/release/xw-linux-arm64 ./cmd/xw
 	
 	@echo "✓ Release binaries built in $(BIN_DIR)/release/"
 	@ls -lh $(BIN_DIR)/release/
