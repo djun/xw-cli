@@ -184,3 +184,21 @@ func (s *AscendSandbox) GetCapabilities() []string {
 	}
 }
 
+// GetDefaultImage returns the default Docker image for Ascend vLLM.
+//
+// Returns:
+//   - Default Ascend vLLM image URL
+func (s *AscendSandbox) GetDefaultImage() string {
+	return "quay.io/ascend/vllm-ascend:v0.11.0rc0"
+}
+
+// GetDockerRuntime returns the Docker runtime to use for Ascend devices.
+//
+// Returns:
+//   - "runc" - Standard OCI runtime (not ascend-docker-runtime)
+//
+// Note: We explicitly use "runc" to avoid Docker auto-selecting ascend-docker-runtime.
+// We access Ascend NPUs via device mounts + privileged mode using standard runtime.
+func (s *AscendSandbox) GetDockerRuntime() string {
+	return "runc"
+}
