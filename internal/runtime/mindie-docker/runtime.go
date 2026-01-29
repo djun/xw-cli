@@ -221,14 +221,18 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		envList = append(envList, fmt.Sprintf("%s=%s", k, v))
 	}
 
+	// Configure SERVER_PORT environment variable for MindIE
+	// MindIE will listen on the port specified by SERVER_PORT (default: 8000)
+	env["SERVER_PORT"] = "8000"
+
 	// Configure port mapping for inference API
-	// MindIE serves on port 1025 inside container (different from vLLM's 8000)
+	// Use port 8000 internally (same as vLLM) for consistency
 	exposedPorts := nat.PortSet{}
 	portBindings := nat.PortMap{}
 
 	if params.Port > 0 {
-		// MindIE serves on port 1025 inside container
-		containerPort := nat.Port("1025/tcp")
+		// Map container port 8000 to host port
+		containerPort := nat.Port("8000/tcp")
 		exposedPorts[containerPort] = struct{}{}
 		portBindings[containerPort] = []nat.PortBinding{
 			{

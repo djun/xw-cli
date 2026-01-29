@@ -28,11 +28,8 @@ type RunOptions struct {
 	// Alias is the optional instance alias
 	Alias string
 
-	// BackendType specifies the inference backend
-	BackendType string
-
-	// DeploymentMode specifies the deployment mode
-	DeploymentMode string
+	// Engine is the inference engine in format "backend:mode" (e.g., "vllm:docker", "mindie:native")
+	Engine string
 }
 
 // NewRunCommand creates the run command.
@@ -67,15 +64,19 @@ This command combines instance management and chat interaction:
 - Waits for the instance to be ready
 - Launches an interactive chat session
 
-If --alias is not specified, the model ID is used as the alias.`,
+If --alias is not specified, the model ID is used as the alias.
+
+Engine Selection:
+  Engine is specified as "backend:mode" (e.g., "vllm:docker", "mindie:native").
+  If not specified, xw will automatically select the best available engine.`,
 		Example: `  # Run a model with default settings
   xw run qwen2.5-7b-instruct
 
   # Run with a custom alias
   xw run qwen2.5-7b-instruct --alias my-chat
 
-  # Run with specific backend
-  xw run qwen2-7b --backend vllm --mode docker`,
+  # Run with specific engine
+  xw run qwen2-7b --engine vllm:docker`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Model = args[0]
@@ -84,8 +85,7 @@ If --alias is not specified, the model ID is used as the alias.`,
 	}
 
 	cmd.Flags().StringVar(&opts.Alias, "alias", "", "instance alias (defaults to model ID)")
-	cmd.Flags().StringVar(&opts.BackendType, "backend", "", "backend type (e.g., vllm, mindie)")
-	cmd.Flags().StringVar(&opts.DeploymentMode, "mode", "", "deployment mode (docker or native)")
+	cmd.Flags().StringVar(&opts.Engine, "engine", "", "inference engine in format backend:mode (e.g., vllm:docker)")
 
 	return cmd
 }
@@ -132,20 +132,11 @@ func runRun(opts *RunOptions) error {
 	if !instanceExists {
 		fmt.Printf("Starting new instance: %s\n", alias)
 		
-		// Build engine string from backend and mode
-		engine := opts.BackendType
-		if opts.DeploymentMode != "" {
-			if engine == "" {
-				engine = "vllm" // default backend
-			}
-			engine = engine + ":" + opts.DeploymentMode
-		}
-		
 		startOpts := &StartOptions{
 			GlobalOptions: opts.GlobalOptions,
 			Model:         opts.Model,
 			Alias:         alias,
-			Engine:        engine,
+			Engine:        opts.Engine,
 			Detach:        true, // Run in background for run command
 		}
 

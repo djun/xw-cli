@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/tsingmao/xw/internal/api"
+	"github.com/tsingmao/xw/internal/device"
 	"github.com/tsingmao/xw/internal/logger"
 	"github.com/tsingmao/xw/internal/models"
 )
@@ -150,6 +151,13 @@ func (h *Handler) PullModel(w http.ResponseWriter, r *http.Request) {
 		// Don't fail the whole operation, just log the warning
 	}
 
+	// Apply chip-specific model configuration adjustments
+	// For Ascend 310P, ensure torch_dtype is set to float16 in config.json
+	if err := h.adjustModelConfigForChip(modelPath); err != nil {
+		logger.Warn("Failed to adjust model config for chip: %v", err)
+		// Don't fail the whole operation, just log the warning
+	}
+
 	// Send final success message with model path
 	finalMsg := fmt.Sprintf(
 		"{\"type\":\"complete\",\"status\":\"success\",\"message\":\"Model downloaded to %s\",\"path\":\"%s\"}",
@@ -282,5 +290,97 @@ func (h *Handler) readChatTemplateFromTokenizer(modelPath string) string {
 	}
 	
 	return chatTemplate
+}
+
+// adjustModelConfigForChip applies chip-specific adjustments to model configuration.
+//
+// For Ascend 310P chips, this function modifies the model's config.json to ensure
+// torch_dtype is set to "float16" for optimal compatibility and performance.
+//
+// The function:
+//   1. Detects if any Ascend 310P chips are present in the system
+//   2. If found, reads the model's config.json file
+//   3. Updates the torch_dtype field to "float16"
+//   4. Writes the modified configuration back to disk
+//
+// This automatic adjustment prevents runtime errors and ensures models work
+// correctly on 310P hardware without manual configuration.
+//
+// Parameters:
+//   - modelPath: Path to the downloaded model directory
+//
+// Returns:
+//   - nil on success or if no adjustment is needed
+//   - error if config modification fails
+func (h *Handler) adjustModelConfigForChip(modelPath string) error {
+	// Check if we have any Ascend 310P devices
+	chipsByType, err := device.FindAIChips()
+	if err != nil {
+		// If chip detection fails, skip adjustment
+		logger.Debug("Failed to detect chips for config adjustment: %v", err)
+		return nil
+	}
+	
+	has310P := false
+	for _, chips := range chipsByType {
+		for _, chip := range chips {
+			if chip.ConfigKey == "ascend-310p" {
+				has310P = true
+				break
+			}
+		}
+		if has310P {
+			break
+		}
+	}
+	
+	// If no 310P chips detected, no adjustment needed
+	if !has310P {
+		return nil
+	}
+	
+	logger.Info("Detected Ascend 310P chip, adjusting model config for compatibility")
+	
+	// Read config.json
+	configPath := filepath.Join(modelPath, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		// If config.json doesn't exist, it's not critical
+		if os.IsNotExist(err) {
+			logger.Debug("No config.json found at %s, skipping adjustment", configPath)
+			return nil
+		}
+		return fmt.Errorf("failed to read config.json: %w", err)
+	}
+	
+	// Parse JSON
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse config.json: %w", err)
+	}
+	
+	// Check if torch_dtype needs adjustment
+	currentDtype, _ := config["torch_dtype"].(string)
+	if currentDtype == "float16" {
+		logger.Debug("torch_dtype is already float16, no adjustment needed")
+		return nil
+	}
+	
+	// Update torch_dtype to float16
+	config["torch_dtype"] = "float16"
+	logger.Info("Changed torch_dtype from '%s' to 'float16' for Ascend 310P compatibility", currentDtype)
+	
+	// Write back to file with proper formatting
+	newData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config.json: %w", err)
+	}
+	
+	if err := os.WriteFile(configPath, newData, 0644); err != nil {
+		return fmt.Errorf("failed to write config.json: %w", err)
+	}
+	
+	logger.Info("Successfully updated config.json for Ascend 310P")
+	return nil
 }
 
