@@ -238,7 +238,7 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		exposedPorts[containerPort] = struct{}{}
 		portBindings[containerPort] = []nat.PortBinding{
 			{
-				HostIP:   "0.0.0.0", // Bind to all interfaces
+				HostIP:   "127.0.0.1", // Bind to localhost only for security
 				HostPort: fmt.Sprintf("%d", params.Port),
 			},
 		}
