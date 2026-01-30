@@ -100,14 +100,16 @@ type FileInfo struct {
 //
 // This function:
 //  1. Queries the ModelScope API for model file list
-//  2. Creates the local cache directory structure
+//  2. Creates the local cache directory structure: cacheDir/{userModelID}/{tag}
 //  3. Downloads all files (with resume support)
 //  4. Validates file integrity
 //  5. Returns the local path to the downloaded model
 //
 // Parameters:
 //   - ctx: Context for cancellation
-//   - modelID: Model identifier (e.g., "Qwen/Qwen2-0.5B")
+//   - sourceID: ModelScope model identifier for API (e.g., "Qwen/Qwen2-0.5B")
+//   - userModelID: User-friendly model identifier for directory structure (e.g., "qwen2-0.5b")
+//   - tag: Model version tag (e.g., "latest", "v1.0")
 //   - cacheDir: Base directory for caching models
 //   - progress: Optional callback for progress updates
 //
@@ -116,31 +118,18 @@ type FileInfo struct {
 //   - Error if download fails
 func (c *Client) DownloadModel(
 	ctx context.Context,
-	modelID string,
+	sourceID string,
+	userModelID string,
+	tag string,
 	cacheDir string,
 	progress ProgressFunc,
 ) (string, error) {
-	// Parse model ID and handle namespace
-	// If modelID has namespace (e.g., "Qwen/Qwen2-7B"), use it as-is
-	// If modelID has no namespace (e.g., "qwen2-7b"), add default namespace for file storage
-	var owner, name string
-	var modelDir string
+	// Create directory structure: cacheDir/{userModelID}/{tag}
+	// This provides a clean, user-friendly path structure
+	// Example: ~/.xw/models/qwen2-0.5b/latest
+	modelDir := filepath.Join(cacheDir, userModelID, tag)
 	
-	parts := strings.Split(modelID, "/")
-	if len(parts) == 2 {
-		// Has namespace: owner/name
-		owner, name = parts[0], parts[1]
-		modelDir = filepath.Join(cacheDir, owner, name)
-	} else if len(parts) == 1 {
-		// No namespace: use default namespace for file storage
-		owner = DefaultNamespace
-		name = modelID
-		modelDir = filepath.Join(cacheDir, owner, name)
-	} else {
-		return "", fmt.Errorf("invalid model ID format: %s (expected: name or owner/name)", modelID)
-	}
-	
-	// Create cache directory structure: cache_dir/owner/name
+	// Create cache directory structure: cache_dir/{userModelID}/{tag}
 	if err := os.MkdirAll(modelDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create model directory: %w", err)
 	}
@@ -154,8 +143,8 @@ func (c *Client) DownloadModel(
 	// Ensure lock is released on function exit (success, error, or cancellation)
 	defer c.releaseLock(lockPath)
 	
-	// Get model file list from API
-	files, err := c.getModelFiles(ctx, modelID)
+	// Get model file list from API using the sourceID (ModelScope identifier)
+	files, err := c.getModelFiles(ctx, sourceID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get model files: %w", err)
 	}
@@ -172,8 +161,8 @@ func (c *Client) DownloadModel(
 		
 		localPath := filepath.Join(modelDir, file.Name)
 		
-		// Download file
-		if err := c.downloadFile(ctx, file, localPath, modelID, progress); err != nil {
+		// Download file using sourceID for API requests
+		if err := c.downloadFile(ctx, file, localPath, sourceID, progress); err != nil {
 			// Don't report error if context was cancelled
 			if ctx.Err() != nil {
 				return "", ctx.Err()

@@ -550,30 +550,19 @@ func (h *Handler) enrichModelsWithDownloadStatus(models *[]api.Model) {
 
 // getModelPath constructs the full path where a model would be stored.
 //
-// ModelScope uses Owner/Name structure, so for model ID "qwen2-7b",
-// we need to find the actual directory which might be like "Qwen/Qwen2-7B".
+// New directory structure: models/{model_id}/{tag}
+// Example: ~/.xw/models/qwen2-0.5b/latest
 //
 // Parameters:
 //   - modelsDir: Base models directory
-//   - modelName: Model name/ID
+//   - modelName: Model ID (e.g., "qwen2-0.5b")
 //
 // Returns:
-//   - Full path to the model directory
+//   - Full path to the model directory (defaults to "latest" tag)
 func (h *Handler) getModelPath(modelsDir, modelName string) string {
-	// Try to get model spec to find the actual source ID
-	spec := models.GetModelSpec(modelName)
-	if spec != nil && spec.SourceID != "" {
-		// If SourceID has namespace (e.g., "Qwen/Qwen2-7B"), use it as-is
-		// If SourceID has no namespace, add default namespace for file storage
-		if strings.Contains(spec.SourceID, "/") {
-			return filepath.Join(modelsDir, spec.SourceID)
-		}
-		// No namespace: use default namespace
-		return filepath.Join(modelsDir, "default", spec.SourceID)
-	}
-	
-	// Fallback: assume model is stored under default namespace
-	return filepath.Join(modelsDir, "default", modelName)
+	// Use the new directory structure: models/{model_id}/{tag}
+	// Default to "latest" tag
+	return filepath.Join(modelsDir, modelName, "latest")
 }
 
 // hasModelFiles checks if a directory contains actual model files.
@@ -686,70 +675,66 @@ func (h *Handler) ListDownloadedModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process models directory (namespace/model-name structure)
-	// Scan for namespace directories (first level)
-	for _, nsEntry := range entries {
+	// Process models directory with new structure: models/{model_id}/{tag}
+	// Scan for model ID directories (first level)
+	for _, modelIDEntry := range entries {
 		// Skip hidden files and directories (starting with .)
-		if strings.HasPrefix(nsEntry.Name(), ".") {
+		if strings.HasPrefix(modelIDEntry.Name(), ".") {
 			continue
 		}
 		
-		if !nsEntry.IsDir() {
+		if !modelIDEntry.IsDir() {
 			continue
 		}
 
-		// Read namespace directory
-		namespacePath := filepath.Join(modelsDir, nsEntry.Name())
-		modelEntries, err := os.ReadDir(namespacePath)
+		// modelIDEntry.Name() is the model ID (e.g., "qwen2-0.5b")
+		modelID := modelIDEntry.Name()
+		
+		// Look up model spec in registry by ID
+		spec := models.GetModelSpec(modelID)
+		if spec == nil {
+			logger.Warn("Model directory %s not found in registry, skipping", modelID)
+			continue
+		}
+
+		// Read model ID directory to find tag directories (second level)
+		modelIDPath := filepath.Join(modelsDir, modelID)
+		tagEntries, err := os.ReadDir(modelIDPath)
 		if err != nil {
-			logger.Warn("Failed to read namespace directory %s: %v", nsEntry.Name(), err)
+			logger.Warn("Failed to read model directory %s: %v", modelID, err)
 			continue
 		}
 
-		// Scan for model directories (second level)
-		for _, modelEntry := range modelEntries {
+		// Scan for tag directories (second level)
+		for _, tagEntry := range tagEntries {
 			// Skip hidden directories
-			if strings.HasPrefix(modelEntry.Name(), ".") {
+			if strings.HasPrefix(tagEntry.Name(), ".") {
 				continue
 			}
 			
-			if !modelEntry.IsDir() {
+			if !tagEntry.IsDir() {
 				continue
 			}
 
-			// Construct SourceID for registry lookup
-			// For "default" namespace, SourceID is just the model name (no namespace)
-			// For other namespaces, SourceID is namespace/model-name
-			var sourceID string
-			var displayName string
-			if nsEntry.Name() == "default" {
-				sourceID = modelEntry.Name()
-				displayName = modelEntry.Name()
-			} else {
-				sourceID = nsEntry.Name() + "/" + modelEntry.Name()
-				displayName = sourceID
-			}
-			
-			modelPath := filepath.Join(namespacePath, modelEntry.Name())
+			tag := tagEntry.Name()
+			modelPath := filepath.Join(modelIDPath, tag)
 
-			// Look up model spec in registry by SourceID
-			spec := models.GetModelSpec(sourceID)
-			if spec == nil {
-				logger.Warn("Model directory %s not found in registry, skipping", displayName)
+			// Verify directory contains model files
+			if !h.hasModelFiles(modelPath) {
 				continue
 			}
 
 			// Get directory size
 			size, err := getDirSize(modelPath)
 			if err != nil {
-				logger.Warn("Failed to get size for %s: %v", displayName, err)
+				logger.Warn("Failed to get size for %s/%s: %v", modelID, tag, err)
 				size = 0
 			}
 
 			// Get modification time
-			info, err := modelEntry.Info()
+			info, err := tagEntry.Info()
 			if err != nil {
-				logger.Warn("Failed to get info for %s: %v", displayName, err)
+				logger.Warn("Failed to get info for %s/%s: %v", modelID, tag, err)
 				continue
 			}
 
@@ -761,9 +746,9 @@ func (h *Handler) ListDownloadedModels(w http.ResponseWriter, r *http.Request) {
 			}
 
 			modelInfo := map[string]interface{}{
-				"id":             spec.ID,        // Internal model ID (e.g., "qwen2.5-7b-instruct")
-				"source":         sourceID,       // SourceID for downloading (e.g., "Qwen/Qwen2.5-7B-Instruct")
-				"tag":            "latest",
+				"id":             spec.ID,        // Model ID (e.g., "qwen2-0.5b")
+				"source":         spec.SourceID,  // SourceID for downloading (e.g., "Qwen/Qwen2-0.5B")
+				"tag":            tag,            // Version tag (e.g., "latest", "v1.0")
 				"size":           float64(size),
 				"default_engine": defaultEngine,
 				"modified":       info.ModTime().Format(time.RFC3339),

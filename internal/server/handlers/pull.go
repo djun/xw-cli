@@ -137,7 +137,12 @@ func (h *Handler) PullModel(w http.ResponseWriter, r *http.Request) {
 	// - Direct HTTP downloads via Go ModelScope client
 	// - Progress tracking and SSE streaming
 	// - Automatic cancellation on client disconnect
-	modelPath, err := h.downloadModelStreaming(r.Context(), sourceID, req.Version, w, flusher)
+	// Use "latest" as default tag if version is not specified
+	tag := req.Version
+	if tag == "" {
+		tag = "latest"
+	}
+	modelPath, err := h.downloadModelStreaming(r.Context(), sourceID, req.Model, tag, w, flusher)
 	if err != nil {
 		// Send error message via SSE and terminate stream
 		fmt.Fprintf(w, "data: {\"type\":\"error\",\"message\":\"Failed to download: %s\"}\n\n", err.Error())

@@ -58,7 +58,7 @@ import (
 //	    return
 //	}
 //	logger.Info("Model downloaded to: %s", path)
-func (h *Handler) downloadModelStreaming(ctx context.Context, modelName, version string, w http.ResponseWriter, flusher http.Flusher) (string, error) {
+func (h *Handler) downloadModelStreaming(ctx context.Context, modelName, modelID, version string, w http.ResponseWriter, flusher http.Flusher) (string, error) {
 	// Ensure the models storage directory exists
 	// This directory is configured in the server config (typically ~/.xw/models/)
 	modelsDir := h.config.Storage.ModelsDir
@@ -66,7 +66,7 @@ func (h *Handler) downloadModelStreaming(ctx context.Context, modelName, version
 		return "", fmt.Errorf("failed to create models directory: %w", err)
 	}
 
-	logger.Info("Starting Go-native download for model %s to %s", modelName, modelsDir)
+	logger.Info("Starting Go-native download for model %s (ID: %s, tag: %s) to %s", modelName, modelID, version, modelsDir)
 
 	// Create ModelScope client
 	client := modelscope.NewClient()
@@ -180,7 +180,8 @@ func (h *Handler) downloadModelStreaming(ctx context.Context, modelName, version
 	
 	// Download model using pure Go implementation
 	// The context will automatically cancel if client disconnects
-	modelPath, err := client.DownloadModel(ctx, modelName, modelsDir, progressFunc)
+	// Pass modelID (user-friendly name) and tag for proper directory structure
+	modelPath, err := client.DownloadModel(ctx, modelName, modelID, version, modelsDir, progressFunc)
 	
 	// Stop heartbeat
 	close(heartbeatDone)
