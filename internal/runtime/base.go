@@ -183,11 +183,11 @@ func (b *DockerRuntimeBase) Start(ctx context.Context, instanceID string) error 
 
 // Stop gracefully stops a running Docker container.
 //
-// This method sends SIGTERM to the container and waits up to 15 minutes
+// This method sends SIGTERM to the container and waits up to 30 seconds
 // for graceful shutdown. If the container doesn't stop within the timeout,
 // Docker will send SIGKILL to force termination.
 //
-// The extended timeout (900 seconds) allows models to complete any in-flight
+// The 30-second timeout allows models to complete any in-flight
 // inference requests and perform proper cleanup before shutdown.
 //
 // After stopping, the container is preserved (not removed) to allow:
@@ -216,8 +216,9 @@ func (b *DockerRuntimeBase) Stop(ctx context.Context, instanceID string) error {
 	containerID := instance.Metadata["container_id"]
 	logger.Info("Stopping Docker container: %s (instance: %s)", containerID[:12], instanceID)
 
-	// Configure graceful shutdown with 15-minute timeout
-	timeout := 900
+	// Configure graceful shutdown with 30-second timeout
+	// After timeout, Docker sends SIGKILL to force termination
+	timeout := 30
 	stopOptions := container.StopOptions{Timeout: &timeout}
 
 	if err := b.client.ContainerStop(ctx, containerID, stopOptions); err != nil {

@@ -141,7 +141,6 @@ func (m *Manager) Create(ctx context.Context, runtimeName string, params *Create
 	// WORLD_SIZE: Total number of devices required
 	// Formula: WORLD_SIZE = TENSOR_PARALLEL * PIPELINE_PARALLEL
 	worldSize := tensorParallel * pipelineParallel
-	
 	// Validate: WorldSize should match allocated device count
 	if worldSize != len(params.Devices) {
 		logger.Warn("WORLD_SIZE (%d) != allocated device count (%d). "+
@@ -534,8 +533,8 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	
-	// Create the instance
-	instance, err := rt.Create(ctx, params)
+	// Create the instance using Manager.Create to apply unified parallelism management
+	instance, err := m.Create(ctx, runtimeName, params)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +610,8 @@ func (m *Manager) ListCompat() []*RunInstance {
 // Returns:
 //   - Error if stop fails
 func (m *Manager) StopCompat(instanceID string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Use 60-second timeout to allow 30s for graceful shutdown + 30s buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	return m.Stop(ctx, instanceID)
 }
@@ -684,7 +684,8 @@ func (m *Manager) findInstanceByAlias(ctx context.Context, alias string) (*Insta
 // Returns:
 //   - Error if the instance is not found or stop fails
 func (m *Manager) StopByAliasCompat(alias string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Use 60-second timeout to allow 30s for graceful shutdown + 30s buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	
 	// Find instance by alias

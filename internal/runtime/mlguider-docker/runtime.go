@@ -273,9 +273,8 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	}
 
 	// Configure port mapping for inference API
-	// Note: MLGuider uses host networking, so port bindings are not used
-	// The container will directly expose port 8000 on the host
-	// Port configuration is kept for consistency with other runtimes
+	// MLGuider listens on port 8000 inside container
+	// Map it to host port specified in params.Port for external access
 	exposedPorts := nat.PortSet{}
 	portBindings := nat.PortMap{}
 
@@ -404,11 +403,11 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 
 	// Create host configuration with networking, devices, and security settings
 	hostConfig := &container.HostConfig{
-		// Use host networking for optimal performance
-		// This eliminates Docker network overhead and latency
-		NetworkMode: "host",
+		// Use bridge networking with port mapping for isolation and security
+		// Maps container port 8000 to host port specified in params.Port
+		NetworkMode: "bridge",
 		
-		// Port bindings (informational only with host networking)
+		// Port bindings for inference API
 		PortBindings: portBindings,
 		
 		// Volume mounts for drivers, models, and system binaries
