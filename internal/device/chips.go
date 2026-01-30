@@ -90,7 +90,7 @@ var KnownChips = []ChipModel{
 		VendorID:   "0x19e5",
 		DeviceID:   "0xd802",
 		ModelName:  "Ascend 910B",
-		ConfigKey:  "ascend-910b",
+		ConfigKey:  ConfigKeyAscend910B,
 		DeviceType: api.DeviceTypeAscend,
 		Generation: "Ascend 9xx",
 		Capabilities: []string{
@@ -102,7 +102,7 @@ var KnownChips = []ChipModel{
 		VendorID:   "0x19e5",
 		DeviceID:   "0xd500",
 		ModelName:  "Ascend 310P",
-		ConfigKey:  "ascend-310p",
+		ConfigKey:  ConfigKeyAscend310P,
 		DeviceType: api.DeviceTypeAscend,
 		Generation: "Ascend 3xx",
 		Capabilities: []string{

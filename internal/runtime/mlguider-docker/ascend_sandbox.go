@@ -103,10 +103,6 @@ func (s *AscendSandbox) PrepareEnvironment(devices []runtime.DeviceInfo) (map[st
 	}
 	env["DEVICES"] = string(devicesJSON)
 
-	// WORLD_SIZE: Total number of devices
-	// This is used for distributed training/inference coordination
-	env["WORLD_SIZE"] = fmt.Sprintf("%d", len(devices))
-
 	return env, nil
 }
 

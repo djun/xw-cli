@@ -9,7 +9,7 @@ import (
 // Qwen2_72B is the 72 billion parameter Qwen2 model
 var Qwen2_72B = &models.ModelSpec{
 	// Model identification
-	ID:       "qwen2-72b",
+	ID:       models.ModelIDQwen2_72B,
 	SourceID: "Qwen/Qwen2-72B",
 
 	// Model specifications

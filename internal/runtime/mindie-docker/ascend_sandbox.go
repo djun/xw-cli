@@ -36,14 +36,12 @@ func NewAscendSandbox() *AscendSandbox {
 // Key environment variables:
 //   - MINDIE_NPU_DEVICE_IDS: Comma-separated NPU indices visible to MindIE
 //     Example: "0,1,2,3" makes NPU 0-3 accessible
-//   - WORLD_SIZE: Number of NPU devices for distributed inference
-//     Must match the count of devices in MINDIE_NPU_DEVICE_IDS
 //
 // Additional environment variables (set by runtime.Create):
 //   - MODEL_PATH: Container-internal path where model files are mounted (/mnt/model)
 //   - MODEL_NAME: Model name used for inference requests (instance alias or model ID)
-//   - MAX_MODEL_LEN: Maximum sequence length for the model (optional)
-//   - MAX_INPUT_LEN: Maximum input sequence length (optional)
+//   - WORLD_SIZE: Set by Manager (TENSOR_PARALLEL * PIPELINE_PARALLEL)
+//   - TENSOR_PARALLEL: Set by Manager (optional, for engines that support it)
 //
 // Parameters:
 //   - devices: List of Ascend devices to make visible
@@ -66,15 +64,9 @@ func (s *AscendSandbox) PrepareEnvironment(devices []runtime.DeviceInfo) (map[st
 	}
 	deviceIDs := strings.Join(indices, ",")
 
-	// WORLD_SIZE must match the number of devices for distributed inference
-	worldSize := fmt.Sprintf("%d", len(devices))
-
 	env := map[string]string{
 		// Primary device visibility variable for MindIE
 		"MINDIE_NPU_DEVICE_IDS": deviceIDs,
-		
-		// Number of devices for distributed inference
-		"WORLD_SIZE": worldSize,
 	}
 
 	return env, nil

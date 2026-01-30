@@ -191,20 +191,20 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		return nil, fmt.Errorf("unsupported device type for MLGuider: %s", deviceType)
 	}
 
-	// Prepare device-specific environment variables
+	// Prepare sandbox-specific environment variables
 	// This includes DEVICES array and NPU-specific configuration
-	deviceEnv, err := sandbox.PrepareEnvironment(params.Devices)
+	sandboxEnv, err := sandbox.PrepareEnvironment(params.Devices)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare device environment: %w", err)
+		return nil, fmt.Errorf("failed to prepare sandbox environment: %w", err)
 	}
 
-	// Merge user environment with device environment
-	// Device environment takes precedence for device-specific variables
+	// Merge user environment with sandbox environment
+	// Sandbox environment takes precedence for device-specific variables
 	env := make(map[string]string)
 	for k, v := range params.Environment {
 		env[k] = v
 	}
-	for k, v := range deviceEnv {
+	for k, v := range sandboxEnv {
 		env[k] = v
 	}
 
@@ -235,32 +235,23 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	}
 	env["MAX_MODEL_LEN"] = fmt.Sprintf("%d", maxModelLen)
 
-	// TENSOR_PARALLEL: Number of devices for tensor parallelism
-	// Default: number of allocated devices
-	tensorParallel := len(params.Devices)
-	if configTP, ok := params.ExtraConfig["tensor_parallel"].(int); ok && configTP > 0 {
-		tensorParallel = configTP
+	// Use unified parallelism parameters from Manager
+	// TENSOR_PARALLEL: Set by Manager (defaults to device count)
+	if params.TensorParallel > 0 {
+		env["TENSOR_PARALLEL"] = fmt.Sprintf("%d", params.TensorParallel)
 	}
-	env["TENSOR_PARALLEL"] = fmt.Sprintf("%d", tensorParallel)
 
-	// EXPERT_PARALLEL: Number of devices for expert parallelism (MoE models)
+	// EXPERT_PARALLEL: For MoE models, use ExtraConfig if provided
 	// Default: 1 (no expert parallelism)
 	expertParallel := 1
 	if configEP, ok := params.ExtraConfig["expert_parallel"].(int); ok && configEP > 0 {
 		expertParallel = configEP
+		env["EXPERT_PARALLEL"] = fmt.Sprintf("%d", expertParallel)
 	}
-	env["EXPERT_PARALLEL"] = fmt.Sprintf("%d", expertParallel)
 
-	// WORLD_SIZE: Total number of devices
-	// Must equal TENSOR_PARALLEL * EXPERT_PARALLEL for distributed training/inference
-	worldSize := tensorParallel * expertParallel
-	env["WORLD_SIZE"] = fmt.Sprintf("%d", worldSize)
-
-	// Validate world size matches device count
-	if worldSize != len(params.Devices) {
-		logger.Warn("WORLD_SIZE (%d) != device count (%d). "+
-			"Ensure TENSOR_PARALLEL * EXPERT_PARALLEL matches allocated devices.",
-			worldSize, len(params.Devices))
+	// WORLD_SIZE: Set by Manager (TENSOR_PARALLEL * PIPELINE_PARALLEL)
+	if params.WorldSize > 0 {
+		env["WORLD_SIZE"] = fmt.Sprintf("%d", params.WorldSize)
 	}
 
 	// API_PORT: HTTP server port for inference API
@@ -470,11 +461,16 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 			"backend_type":      params.BackendType,
 			"deployment_mode":   params.DeploymentMode,
 			"image":             imageName,
-			"tensor_parallel":   fmt.Sprintf("%d", tensorParallel),
+			"tensor_parallel":   fmt.Sprintf("%d", params.TensorParallel),
 			"expert_parallel":   fmt.Sprintf("%d", expertParallel),
-			"world_size":        fmt.Sprintf("%d", worldSize),
+			"world_size":        fmt.Sprintf("%d", params.WorldSize),
 			"max_model_len":     fmt.Sprintf("%d", maxModelLen),
 		},
+	}
+
+	// Store max concurrent requests if specified (used by proxy for concurrency control)
+	if maxConcurrent, ok := params.ExtraConfig["max_concurrent"].(int); ok && maxConcurrent > 0 {
+		instance.Metadata["max_concurrent"] = fmt.Sprintf("%d", maxConcurrent) 
 	}
 
 	// Register instance in tracking map

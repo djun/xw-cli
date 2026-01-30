@@ -9,7 +9,7 @@ import (
 // Qwen2_0_5B is the 0.5 billion parameter Qwen2 model
 var Qwen2_0_5B = &models.ModelSpec{
 	// Model identification
-	ID:       "qwen2-0.5b",
+	ID:       models.ModelIDQwen2_0_5B,
 	SourceID: "Qwen/Qwen2-0.5B",
 
 	// Model specifications

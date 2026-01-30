@@ -21,18 +21,23 @@ type Runtime interface {
 
 // CreateParams contains standard parameters for creating an instance.
 type CreateParams struct {
-	InstanceID     string
-	ModelID        string
-	Alias          string // Instance alias for inference (defaults to ModelID)
-	ModelPath      string
-	ModelVersion   string
-	BackendType    string // Backend type (e.g., "vllm")
-	DeploymentMode string // Deployment mode (e.g., "docker")
-	ServerName     string // Server unique identifier (added as container name suffix)
-	Devices        []DeviceInfo
-	Port           int
-	Environment    map[string]string
-	ExtraConfig    map[string]interface{}
+	InstanceID       string
+	ModelID          string
+	Alias            string // Instance alias for inference (defaults to ModelID)
+	ModelPath        string
+	ModelVersion     string
+	BackendType      string // Backend type (e.g., "vllm")
+	DeploymentMode   string // Deployment mode (e.g., "docker")
+	ServerName       string // Server unique identifier (added as container name suffix)
+	Devices          []DeviceInfo
+	Port             int
+	Environment      map[string]string
+	ExtraConfig      map[string]interface{}
+	
+	// Unified parallelism parameters (set by Manager)
+	TensorParallel   int // Number of devices for tensor parallelism
+	PipelineParallel int // Number of devices for pipeline parallelism (default: 1)
+	WorldSize        int // Total number of devices (TENSOR_PARALLEL * PIPELINE_PARALLEL)
 }
 
 // DeviceInfo contains information about a hardware device.

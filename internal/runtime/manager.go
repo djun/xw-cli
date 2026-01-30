@@ -109,6 +109,13 @@ func (m *Manager) RegisterRuntime(runtime Runtime) error {
 	}
 	
 // Create creates an instance using the specified runtime.
+//
+// This method handles unified parallelism parameter management:
+//  1. Calculates TensorParallel from ExtraConfig or uses device count
+//  2. Gets PipelineParallel from ExtraConfig (defaults to 1)
+//  3. Calculates WorldSize = TensorParallel * PipelineParallel
+//  4. Validates WorldSize matches allocated device count
+//  5. Passes computed parameters to runtime implementation
 func (m *Manager) Create(ctx context.Context, runtimeName string, params *CreateParams) (*Instance, error) {
 	m.mu.RLock()
 	rt, exists := m.runtimes[runtimeName]
@@ -117,6 +124,39 @@ func (m *Manager) Create(ctx context.Context, runtimeName string, params *Create
 	if !exists {
 		return nil, fmt.Errorf("runtime %s not found", runtimeName)
 	}
+	
+	// Unified parallelism parameter management
+	// TENSOR_PARALLEL: defaults to number of allocated devices
+	tensorParallel := len(params.Devices)
+	if configTP, ok := params.ExtraConfig["tensor_parallel"].(int); ok && configTP > 0 {
+		tensorParallel = configTP
+	}
+	
+	// PIPELINE_PARALLEL: defaults to 1 (no pipeline parallelism)
+	pipelineParallel := 1
+	if configPP, ok := params.ExtraConfig["pipeline_parallel"].(int); ok && configPP > 0 {
+		pipelineParallel = configPP
+	}
+	
+	// WORLD_SIZE: Total number of devices required
+	// Formula: WORLD_SIZE = TENSOR_PARALLEL * PIPELINE_PARALLEL
+	worldSize := tensorParallel * pipelineParallel
+	
+	// Validate: WorldSize should match allocated device count
+	if worldSize != len(params.Devices) {
+		logger.Warn("WORLD_SIZE (%d) != allocated device count (%d). "+
+			"TENSOR_PARALLEL=%d, PIPELINE_PARALLEL=%d. "+
+			"Devices may not be utilized optimally.",
+			worldSize, len(params.Devices), tensorParallel, pipelineParallel)
+	}
+	
+	// Set computed parameters in CreateParams for runtime use
+	params.TensorParallel = tensorParallel
+	params.PipelineParallel = pipelineParallel
+	params.WorldSize = worldSize
+	
+	logger.Info("Creating instance with parallelism: TP=%d, PP=%d, WORLD_SIZE=%d, Devices=%d",
+		tensorParallel, pipelineParallel, worldSize, len(params.Devices))
 	
 	return rt.Create(ctx, params)
 	}

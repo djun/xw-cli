@@ -178,29 +178,20 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		return nil, fmt.Errorf("unsupported device type: %s", deviceType)
 	}
 
-	// Prepare device-specific environment variables
-	deviceEnv, err := sandbox.PrepareEnvironment(params.Devices)
+	// Prepare sandbox-specific environment variables
+	sandboxEnv, err := sandbox.PrepareEnvironment(params.Devices)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare environment: %w", err)
 	}
 
-	// Merge user environment with device environment
-	// Device environment takes precedence for device-specific variables
+	// Merge user environment with sandbox environment
+	// Sandbox environment takes precedence for device-specific variables
 	env := make(map[string]string)
 	for k, v := range params.Environment {
 		env[k] = v
 	}
-	for k, v := range deviceEnv {
+	for k, v := range sandboxEnv {
 		env[k] = v
-	}
-
-	// Apply MindIE-specific environment overrides from ExtraConfig
-	// This allows users to customize MAX_MODEL_LEN and MAX_INPUT_LEN
-	if maxModelLen, ok := params.ExtraConfig["max_model_len"].(int); ok && maxModelLen > 0 {
-		env["MAX_MODEL_LEN"] = fmt.Sprintf("%d", maxModelLen)
-	}
-	if maxInputLen, ok := params.ExtraConfig["max_input_len"].(int); ok && maxInputLen > 0 {
-		env["MAX_INPUT_LEN"] = fmt.Sprintf("%d", maxInputLen)
 	}
 
 	// Set MindIE-required environment variables
@@ -218,6 +209,17 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	// Configure SERVER_PORT environment variable for MindIE
 	// MindIE will listen on the port specified by SERVER_PORT (default: 8000)
 	env["SERVER_PORT"] = "8000"
+
+	// Use unified parallelism parameters from Manager
+	// WORLD_SIZE: Set by Manager (TENSOR_PARALLEL * PIPELINE_PARALLEL)
+	if params.WorldSize > 0 {
+		env["WORLD_SIZE"] = fmt.Sprintf("%d", params.WorldSize)
+	}
+
+	// TENSOR_PARALLEL: Set by Manager (optional, for engines that support it)
+	if params.TensorParallel > 0 {
+		env["TENSOR_PARALLEL"] = fmt.Sprintf("%d", params.TensorParallel)
+	}
 
 	// Convert environment map to Docker format (KEY=VALUE strings)
 	envList := make([]string, 0, len(env))

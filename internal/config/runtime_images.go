@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/tsingmao/xw/internal/device"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,7 +55,7 @@ type RuntimeImagesConfig map[string]map[string]map[string]string
 func GetDefaultRuntimeImagesConfig() RuntimeImagesConfig {
 	return RuntimeImagesConfig{
 		// Ascend 910B configuration
-		"ascend-910b": {
+		device.ConfigKeyAscend910B: {
 			"vllm": {
 				"arm64": "quay.io/ascend/vllm-ascend:v0.11.0rc0-arm64",
 				"amd64": "NONE",
@@ -70,7 +71,7 @@ func GetDefaultRuntimeImagesConfig() RuntimeImagesConfig {
 		},
 		
 		// Ascend 310P configuration
-		"ascend-310p": {
+		device.ConfigKeyAscend310P: {
 			"vllm": {
 				"arm64": "quay.io/ascend/vllm-ascend:main-310p",
 				"amd64": "NONE",

@@ -156,20 +156,31 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		return nil, fmt.Errorf("unsupported device type: %s", deviceType)
 	}
 	
-	// Prepare device-specific environment variables
-	deviceEnv, err := sandbox.PrepareEnvironment(params.Devices)
+	// Prepare sandbox-specific environment variables
+	sandboxEnv, err := sandbox.PrepareEnvironment(params.Devices)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare environment: %w", err)
 	}
 	
-	// Merge user environment with device environment
-	// Device environment takes precedence for device-specific variables
+	// Merge user environment with sandbox environment
+	// Sandbox environment takes precedence for device-specific variables
 	env := make(map[string]string)
 	for k, v := range params.Environment {
 		env[k] = v
 	}
-	for k, v := range deviceEnv {
+	for k, v := range sandboxEnv {
 		env[k] = v
+	}
+	
+	// Use unified parallelism parameters from Manager
+	// WORLD_SIZE: Set by Manager (TENSOR_PARALLEL * PIPELINE_PARALLEL)
+	if params.WorldSize > 0 {
+		env["WORLD_SIZE"] = fmt.Sprintf("%d", params.WorldSize)
+	}
+
+	// TENSOR_PARALLEL: Set by Manager (defaults to device count)
+	if params.TensorParallel > 0 {
+		env["TENSOR_PARALLEL"] = fmt.Sprintf("%d", params.TensorParallel)
 	}
 	
 	// Convert environment map to Docker format (KEY=VALUE strings)

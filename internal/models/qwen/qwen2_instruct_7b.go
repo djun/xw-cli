@@ -9,7 +9,7 @@ import (
 // Qwen2_Instruct_7B is the instruction-tuned version of Qwen2 7B
 var Qwen2_Instruct_7B = &models.ModelSpec{
 	// Model identification
-	ID:       "qwen2.5-7b-instruct",
+	ID:       models.ModelIDQwen2_5_7B_Instruct,
 	SourceID: "Qwen/Qwen2.5-7B-Instruct",
 
 	// Model specifications
