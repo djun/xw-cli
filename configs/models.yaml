@@ -47,7 +47,6 @@ models:
         - vllm:docker
         - mindie:docker
     
-    tag: main
     capabilities:
       - completion
 
@@ -65,7 +64,6 @@ models:
         - vllm:docker
         - mindie:docker
     
-    tag: main
     capabilities:
       - completion
 
@@ -87,7 +85,6 @@ models:
         - vllm:docker
         - mindie:docker
     
-    tag: main
     capabilities:
       - completion
 
