@@ -80,6 +80,7 @@ chip devices. Press Ctrl+C to gracefully shut down the server.`,
 
   # Start with verbose logging
   xw serve -v`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Validate port range
 			if opts.Port < 1 || opts.Port > 65535 {

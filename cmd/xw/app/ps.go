@@ -52,6 +52,7 @@ func NewPsCommand(globalOpts *GlobalOptions) *cobra.Command {
 Shows all instances including both running and stopped ones.`,
 		Example: `  # List all instances
   xw ps`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPs(opts)
 		},

@@ -30,6 +30,9 @@ type RunOptions struct {
 
 	// Engine is the inference engine in format "backend:mode" (e.g., "vllm:docker", "mindie:native")
 	Engine string
+
+	// Device is the device list (e.g., "0", "0,1,2,3")
+	Device string
 }
 
 // NewRunCommand creates the run command.
@@ -68,7 +71,11 @@ If --alias is not specified, the model ID is used as the alias.
 
 Engine Selection:
   Engine is specified as "backend:mode" (e.g., "vllm:docker", "mindie:native").
-  If not specified, xw will automatically select the best available engine.`,
+  If not specified, xw will automatically select the best available engine.
+
+Device Selection:
+  Specify which AI accelerator devices to use (e.g., --device 0 or --device 0,1,2,3)
+  If not specified, the system will automatically allocate available devices.`,
 		Example: `  # Run a model with default settings
   xw run qwen2.5-7b-instruct
 
@@ -76,7 +83,10 @@ Engine Selection:
   xw run qwen2.5-7b-instruct --alias my-chat
 
   # Run with specific engine
-  xw run qwen2-7b --engine vllm:docker`,
+  xw run qwen2-7b --engine vllm:docker
+
+  # Run on specific devices
+  xw run qwen2.5-7b-instruct --device 0,1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Model = args[0]
@@ -86,6 +96,7 @@ Engine Selection:
 
 	cmd.Flags().StringVar(&opts.Alias, "alias", "", "instance alias (defaults to model ID)")
 	cmd.Flags().StringVar(&opts.Engine, "engine", "", "inference engine in format backend:mode (e.g., vllm:docker)")
+	cmd.Flags().StringVar(&opts.Device, "device", "", "device list (e.g., 0 or 0,1,2,3)")
 
 	return cmd
 }
@@ -137,6 +148,7 @@ func runRun(opts *RunOptions) error {
 			Model:         opts.Model,
 			Alias:         alias,
 			Engine:        opts.Engine,
+			Device:        opts.Device,
 			Detach:        true, // Run in background for run command
 		}
 

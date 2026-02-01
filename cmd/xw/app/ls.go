@@ -64,6 +64,7 @@ Use -a/--all to show all models supported by the current chip.`,
   
   # Same as ls
   xw list`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(opts)
 		},

@@ -62,6 +62,7 @@ By default, shows version information for both the client and server. Use
 
   # Show only server version
   xw version --server`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runVersion(opts)
 		},

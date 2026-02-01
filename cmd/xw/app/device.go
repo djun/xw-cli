@@ -53,6 +53,7 @@ func newDeviceListCommand(globalOpts *GlobalOptions) *cobra.Command {
 		Use:   "list",
 		Short: "List detected AI chips on server",
 		Long:  `Query the server and list all detected AI accelerator chips.`,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := getClient(globalOpts)
 			
@@ -118,6 +119,7 @@ This command shows which chip models are configured and supported for
 running inference workloads.`,
 		Example: `  # List all supported chip models
   xw device supported`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := getClient(globalOpts)
 			
