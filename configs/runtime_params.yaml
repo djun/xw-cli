@@ -34,9 +34,10 @@ templates:
       - max_model_len=8192
       - tensor_parallel_size=1
 
-  # Example: Ascend 310P with small models using MindIE
-  - name: ascend-310p_qwen2-0.5b_mindie
+  # Example: Ascend 310P with Qwen2.5 7B using vLLM
+  - name: ascend-310p_qwen2.5-7b-instruct_vllm
     params:
+      - world_size=1
       - device_id=0
       - precision=fp16
 

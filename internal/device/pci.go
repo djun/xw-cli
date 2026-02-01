@@ -132,16 +132,18 @@ func FindAIChips() (map[string][]DetectedChip, error) {
 		return nil, fmt.Errorf("failed to scan PCI devices: %w", err)
 	}
 	
+	// Load device configuration once before the loop
+	devConfig, err := config.LoadDevicesConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load device configuration: %w", err)
+	}
+	
 	detected := make(map[string][]DetectedChip)
 	
 	for _, device := range devices {
-		// Lookup chip from configuration
-		configChip, err := config.LookupChipModelByPCIID(device.VendorID, device.DeviceID)
-		if err != nil {
-			// Configuration loading error
-			continue
-		}
-		if configChip == nil {
+		// Lookup chip from configuration using pre-loaded config
+		vendor, model := config.FindChipModelByIdentifier(devConfig, device.VendorID, device.DeviceID)
+		if vendor == nil || model == nil {
 			// Not a known AI chip in configuration
 			continue
 		}
@@ -151,14 +153,14 @@ func FindAIChips() (map[string][]DetectedChip, error) {
 			VendorID:     device.VendorID,
 			DeviceID:     device.DeviceID,
 			BusAddress:   device.BusAddress,
-			ModelName:    configChip.ModelName,
-			ConfigKey:    configChip.ConfigKey,
-			DeviceType:   configChip.DeviceType,
-			Generation:   configChip.Generation,
-			Capabilities: configChip.Capabilities,
+			ModelName:    model.ModelName,
+			ConfigKey:    model.ConfigKey,
+			DeviceType:   api.DeviceType(model.ConfigKey),
+			Generation:   model.Generation,
+			Capabilities: model.Capabilities,
 		}
 		
-		deviceType := string(configChip.DeviceType)
+		deviceType := string(detectedChip.DeviceType)
 		detected[deviceType] = append(detected[deviceType], detectedChip)
 	}
 	
