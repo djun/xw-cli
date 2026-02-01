@@ -38,6 +38,11 @@ type CreateParams struct {
 	Environment      map[string]string
 	ExtraConfig      map[string]interface{}
 	
+	// Template parameters from runtime_params.yaml
+	// Format: ["key=value", "tensor_parallel=4"]
+	// Will be converted to environment variables (KEY=value, TENSOR_PARALLEL=4)
+	TemplateParams   []string
+	
 	// Unified parallelism parameters (set by Manager)
 	TensorParallel   int // Number of devices for tensor parallelism
 	PipelineParallel int // Number of devices for pipeline parallelism (default: 1)

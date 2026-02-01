@@ -184,15 +184,19 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		env[k] = v
 	}
 	
-	// Use unified parallelism parameters from Manager
-	// WORLD_SIZE: Set by Manager (TENSOR_PARALLEL * PIPELINE_PARALLEL)
-	if params.WorldSize > 0 {
-		env["WORLD_SIZE"] = fmt.Sprintf("%d", params.WorldSize)
-	}
-
-	// TENSOR_PARALLEL: Set by Manager (defaults to device count)
+	// Apply template parameters from runtime_params.yaml (if any)
+	// Template params are converted to environment variables
+	r.ApplyTemplateParams(env, params)
+	
+	// Set parallelism parameters (only if specified by user)
+	// These control tensor parallelism across multiple devices
 	if params.TensorParallel > 0 {
 		env["TENSOR_PARALLEL"] = fmt.Sprintf("%d", params.TensorParallel)
+		logger.Debug("Set TENSOR_PARALLEL=%d", params.TensorParallel)
+	}
+	if params.WorldSize > 0 {
+		env["WORLD_SIZE"] = fmt.Sprintf("%d", params.WorldSize)
+		logger.Debug("Set WORLD_SIZE=%d", params.WorldSize)
 	}
 	
 	// Convert environment map to Docker format (KEY=VALUE strings)

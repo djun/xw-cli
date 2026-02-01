@@ -14,6 +14,7 @@ import (
 	"time"
 	
 	"github.com/tsingmao/xw/internal/api"
+	"github.com/tsingmao/xw/internal/config"
 	"github.com/tsingmao/xw/internal/device"
 	"github.com/tsingmao/xw/internal/logger"
 	"github.com/tsingmao/xw/internal/models"
@@ -21,21 +22,31 @@ import (
 
 // Manager manages multiple runtime implementations.
 type Manager struct {
-	mu              sync.RWMutex
-	runtimes        map[string]Runtime
-	deviceAllocator *device.Allocator // Lazy-initialized device allocator
-	stopCh          chan struct{}
-	wg              sync.WaitGroup
-	serverName      string // Server unique identifier for multi-server support
+	mu                 sync.RWMutex
+	runtimes           map[string]Runtime
+	deviceAllocator    *device.Allocator // Lazy-initialized device allocator
+	runtimeParamsConfig *config.RuntimeParamsConfig // Runtime parameter templates
+	configDir          string // Configuration directory for device allocator
+	stopCh             chan struct{}
+	wg                 sync.WaitGroup
+	serverName         string // Server unique identifier for multi-server support
 }
 
 // NewManager creates a new runtime manager with the given server name.
 // The server name is used as a suffix for container names to support multiple xw servers.
 func NewManager(serverName string) (*Manager, error) {
+	// Load runtime parameter templates (optional, won't fail if file doesn't exist)
+	runtimeParamsConfig, err := config.LoadRuntimeParamsConfig()
+	if err != nil {
+		logger.Warn("Failed to load runtime params config: %v", err)
+		runtimeParamsConfig = &config.RuntimeParamsConfig{Templates: []config.RuntimeParamsTemplate{}}
+	}
+	
 	return &Manager{
-		runtimes:        make(map[string]Runtime),
-		deviceAllocator: nil, // Lazy-initialized on first use
-		stopCh:          make(chan struct{}),
+		runtimes:           make(map[string]Runtime),
+		deviceAllocator:    nil, // Lazy-initialized on first use
+		runtimeParamsConfig: runtimeParamsConfig,
+		stopCh:             make(chan struct{}),
 		serverName:      serverName,
 	}, nil
 }
@@ -125,40 +136,145 @@ func (m *Manager) Create(ctx context.Context, runtimeName string, params *Create
 		return nil, fmt.Errorf("runtime %s not found", runtimeName)
 	}
 	
-	// Unified parallelism parameter management
-	// TENSOR_PARALLEL: defaults to number of allocated devices
-	tensorParallel := len(params.Devices)
-	if configTP, ok := params.ExtraConfig["tensor_parallel"].(int); ok && configTP > 0 {
+	// Tensor parallelism and device allocation management
+	// Priority:
+	// 1. If --tp specified: world_size = tp, allocate tp devices
+	// 2. If --device specified: world_size = device_count, use specified devices
+	// 3. If template has world_size: use template world_size, allocate that many devices
+	// 4. If none: world_size = 0, no device allocation
+	//
+	// Constraints:
+	// - world_size and device_count must be 0 or 1/2/4/8
+	// - If both --tp and --device: tp must equal device_count
+	
+	var tensorParallel int
+	var worldSize int
+	var needDeviceAllocation bool
+	
+	deviceCount := len(params.Devices)
+	configTP, hasTP := params.ExtraConfig["tensor_parallel"].(int)
+	hasDevice := deviceCount > 0
+	
+	// Extract world_size from template parameters if present
+	templateWorldSize := extractWorldSizeFromTemplate(params.TemplateParams)
+	
+	// Validate allowed values (0 or 1/2/4/8)
+	validateParallelism := func(value int, name string) error {
+		if value != 0 && value != 1 && value != 2 && value != 4 && value != 8 {
+			return fmt.Errorf("%s must be 0, 1, 2, 4, or 8 (got %d)", name, value)
+		}
+		return nil
+	}
+	
+	if hasTP && configTP > 0 {
+		// Priority 1: --tp specified
+		if err := validateParallelism(configTP, "tensor_parallel"); err != nil {
+			return nil, err
+		}
+		
+		if hasDevice {
+			// Both --tp and --device specified: must be equal
+			if err := validateParallelism(deviceCount, "device count"); err != nil {
+				return nil, err
+			}
+			if configTP != deviceCount {
+				return nil, fmt.Errorf("tensor_parallel (%d) must equal device count (%d) when both are specified", configTP, deviceCount)
+			}
+			// Devices already allocated, use them
+			needDeviceAllocation = false
+		} else {
+			// Only --tp: need to allocate devices
+			needDeviceAllocation = true
+		}
+		
 		tensorParallel = configTP
+		worldSize = configTP
+		logger.Info("Using specified tensor_parallel: TP=%d, WORLD_SIZE=%d", tensorParallel, worldSize)
+		
+	} else if hasDevice {
+		// Priority 2: Only --device specified
+		if err := validateParallelism(deviceCount, "device count"); err != nil {
+			return nil, err
+		}
+		
+		tensorParallel = deviceCount
+		worldSize = deviceCount
+		needDeviceAllocation = false // Devices already specified
+		logger.Info("Using specified devices: TP=%d, WORLD_SIZE=%d, Devices=%d", 
+			tensorParallel, worldSize, deviceCount)
+			
+	} else if templateWorldSize > 0 {
+		// Priority 3: Template has world_size
+		if err := validateParallelism(templateWorldSize, "template world_size"); err != nil {
+			return nil, err
+		}
+		
+		tensorParallel = templateWorldSize
+		worldSize = templateWorldSize
+		needDeviceAllocation = true // Need to allocate devices based on template
+		logger.Info("Using template world_size: TP=%d, WORLD_SIZE=%d", tensorParallel, worldSize)
+		
+	} else {
+		// Priority 4: Nothing specified - no device allocation
+		tensorParallel = 0
+		worldSize = 0
+		needDeviceAllocation = false
+		logger.Info("No parallelism parameters specified, world_size=0, no device allocation")
 	}
 	
-	// PIPELINE_PARALLEL: defaults to 1 (no pipeline parallelism)
-	pipelineParallel := 1
-	if configPP, ok := params.ExtraConfig["pipeline_parallel"].(int); ok && configPP > 0 {
-		pipelineParallel = configPP
-	}
-	
-	// WORLD_SIZE: Total number of devices required
-	// Formula: WORLD_SIZE = TENSOR_PARALLEL * PIPELINE_PARALLEL
-	worldSize := tensorParallel * pipelineParallel
-	// Validate: WorldSize should match allocated device count
-	if worldSize != len(params.Devices) {
-		logger.Warn("WORLD_SIZE (%d) != allocated device count (%d). "+
-			"TENSOR_PARALLEL=%d, PIPELINE_PARALLEL=%d. "+
-			"Devices may not be utilized optimally.",
-			worldSize, len(params.Devices), tensorParallel, pipelineParallel)
+	// Allocate devices if needed
+	if needDeviceAllocation && worldSize > 0 {
+		if params.InstanceID == "" {
+			return nil, fmt.Errorf("instance ID is required for device allocation")
+		}
+		
+		// Get or create device allocator
+		allocator, err := m.getOrCreateAllocator(m.configDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize device allocator: %w", err)
+		}
+		
+		// Allocate the required number of devices
+		allocatedDevices, err := allocator.Allocate(params.InstanceID, worldSize)
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate %d device(s): %w", worldSize, err)
+		}
+		
+		// Convert device.DeviceInfo to runtime.DeviceInfo
+		params.Devices = make([]DeviceInfo, len(allocatedDevices))
+		for i, dev := range allocatedDevices {
+			params.Devices[i] = DeviceInfo{
+				Type:       api.DeviceType(dev.Type),
+				Index:      dev.Index,
+				PCIAddress: dev.BusAddress,
+				ModelName:  dev.ModelName,
+				ConfigKey:  dev.ConfigKey,
+				Properties: dev.Properties,
+			}
+		}
+		
+		logger.Info("Allocated %d device(s) for instance %s", worldSize, params.InstanceID)
 	}
 	
 	// Set computed parameters in CreateParams for runtime use
-	params.TensorParallel = tensorParallel
-	params.PipelineParallel = pipelineParallel
-	params.WorldSize = worldSize
+	if worldSize > 0 {
+		params.TensorParallel = tensorParallel
+		params.PipelineParallel = 1 // Always 1 for now
+		params.WorldSize = worldSize
+	} else {
+		params.TensorParallel = 0
+		params.PipelineParallel = 0
+		params.WorldSize = 0
+	}
 	
-	logger.Info("Creating instance with parallelism: TP=%d, PP=%d, WORLD_SIZE=%d, Devices=%d",
-		tensorParallel, pipelineParallel, worldSize, len(params.Devices))
+	// Template parameters are passed to runtime implementation
+	// Each runtime (docker/native) decides how to apply them (env vars, config files, etc.)
+	if len(params.TemplateParams) > 0 {
+		logger.Debug("Passing %d template parameter(s) to runtime implementation", len(params.TemplateParams))
+	}
 	
 	return rt.Create(ctx, params)
-	}
+}
 	
 // Start starts an instance.
 func (m *Manager) Start(ctx context.Context, instanceID string) error {
@@ -338,6 +454,9 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 		return nil, fmt.Errorf("run options cannot be nil")
 	}
 	
+	// Save configDir for device allocation
+	m.configDir = configDir
+	
 	// Set default alias to model ID if not specified
 	if opts.Alias == "" {
 		opts.Alias = opts.ModelID
@@ -444,18 +563,19 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 		return nil, fmt.Errorf("model path is required")
 	}
 	
-	// Get or create device allocator
-	allocator, err := m.getOrCreateAllocator(configDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize device allocator: %w", err)
-	}
-	
 	var devices []DeviceInfo
 	
-	// Check if specific devices were requested via --device parameter
+	// Only parse --device parameter if specified
+	// Device allocation will be handled in Create() based on world_size
 	if deviceList, ok := opts.AdditionalConfig["device"].(string); ok && deviceList != "" {
 		// User specified devices explicitly (e.g., "0" or "0,1,2,3")
-		// Parse the device list and use those specific devices
+		// Get or create device allocator to query available devices
+		allocator, err := m.getOrCreateAllocator(configDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize device allocator: %w", err)
+		}
+		
+		// Parse the device list
 		deviceIndices, err := parseDeviceList(deviceList)
 		if err != nil {
 			return nil, fmt.Errorf("invalid device list: %w", err)
@@ -482,36 +602,43 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 		}
 		
 		logger.Info("Using user-specified devices: %v", deviceIndices)
-	} else {
-		// No specific devices requested - use automatic allocation
-		// Always allocate 1 device by default
-		deviceCount := 1
-		
-		allocatedDevices, err := allocator.Allocate(instanceID, deviceCount)
-		if err != nil {
-			return nil, fmt.Errorf("failed to allocate devices: %w", err)
-		}
-		
-		// Convert device.DeviceInfo to runtime.DeviceInfo
-		devices = make([]DeviceInfo, len(allocatedDevices))
-		for i, dev := range allocatedDevices {
-			devices[i] = DeviceInfo{
-				Type:       api.DeviceType(dev.Type),
-				Index:      dev.Index,
-				PCIAddress: dev.BusAddress,
-				ModelName:  dev.ModelName,
-				ConfigKey:  dev.ConfigKey,
-				Properties: dev.Properties,
-			}
-		}
-		
-		logger.Info("Auto-allocated %d device(s) for instance %s", deviceCount, instanceID)
 	}
+	// If no --device specified, devices will be empty
+	// Create() will allocate devices based on --tp, template world_size, or skip allocation
 
 	// Prepare create parameters
 	extraConfig := make(map[string]interface{})
 	for k, v := range opts.AdditionalConfig {
 		extraConfig[k] = v
+	}
+	
+	// Get template parameters based on chip + model + backend
+	// Template name format: {chip_config_key}_{model_id}_{backend_name}
+	// If devices not specified, query available devices to determine chip type
+	var templateParams []string
+	var chipConfigKey string
+	
+	if len(devices) > 0 {
+		// Use specified device's chip type
+		chipConfigKey = devices[0].ConfigKey
+	} else {
+		// Query first available device to determine chip type for template lookup
+		allocator, err := m.getOrCreateAllocator(configDir)
+		if err == nil {
+			allDevices := allocator.GetAllDevices()
+			if len(allDevices) > 0 {
+				chipConfigKey = allDevices[0].ConfigKey
+			}
+		}
+	}
+	
+	if chipConfigKey != "" {
+		backendName := opts.BackendType // Use backend name without mode (e.g., "vllm", not "vllm:docker")
+		templateParams = config.GetTemplateParams(m.runtimeParamsConfig, chipConfigKey, opts.ModelID, backendName)
+		if len(templateParams) > 0 {
+			logger.Info("Applied runtime template: %s_%s_%s with %d parameter(s)", 
+				chipConfigKey, opts.ModelID, backendName, len(templateParams))
+		}
 	}
 	
 	params := &CreateParams{
@@ -527,7 +654,8 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 		Port:           opts.Port,
 		Environment:    make(map[string]string),
 		ExtraConfig:    extraConfig,
-}
+		TemplateParams: templateParams,      // Add template parameters
+	}
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -543,7 +671,10 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 	if err := rt.Start(ctx, instanceID); err != nil {
 		// Clean up on failure
 		_ = rt.Remove(context.Background(), instanceID)
-		_ = allocator.Release(instanceID) // Release allocated devices
+		// Release allocated devices (if any were allocated in Create())
+		if m.deviceAllocator != nil {
+			_ = m.deviceAllocator.Release(instanceID)
+		}
 		return nil, fmt.Errorf("failed to start instance: %w", err)
 	}
 	
@@ -773,6 +904,43 @@ func parseDeviceList(deviceList string) ([]int, error) {
 	}
 	
 	return indices, nil
+}
+
+// extractWorldSizeFromTemplate extracts the world_size parameter from template parameters.
+//
+// Template parameters are in "key=value" format. This function searches for "world_size",
+// "worldSize", or "WORLD_SIZE" and returns its integer value.
+//
+// Parameters:
+//   - templateParams: List of "key=value" parameters
+//
+// Returns:
+//   - world_size value (0 if not found or invalid)
+func extractWorldSizeFromTemplate(templateParams []string) int {
+	if len(templateParams) == 0 {
+		return 0
+	}
+	
+	for _, param := range templateParams {
+		// Split on first '='
+		parts := strings.SplitN(param, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		
+		key := strings.TrimSpace(strings.ToLower(parts[0]))
+		value := strings.TrimSpace(parts[1])
+		
+		// Check for world_size variations
+		if key == "world_size" || key == "worldsize" {
+			if ws, err := strconv.Atoi(value); err == nil && ws > 0 {
+				logger.Debug("Extracted world_size=%d from template parameters", ws)
+				return ws
+			}
+		}
+	}
+	
+	return 0
 }
 
 // GetLogsByAlias retrieves the log stream for an instance by its alias.

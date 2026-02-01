@@ -26,6 +26,9 @@ type StartOptions struct {
 
 	// Device is the device list (e.g., "0", "0,1,2,3")
 	Device string
+	
+	// TensorParallel is the tensor parallelism degree (must be 1/2/4/8)
+	TensorParallel int
 
 	// MaxConcurrent is the maximum number of concurrent requests (0 for unlimited)
 	MaxConcurrent int
@@ -121,6 +124,8 @@ Examples:
 		"inference engine in format backend:mode (e.g., vllm:docker, mindie:native)")
 	cmd.Flags().StringVar(&opts.Device, "device", "", 
 		"device list (e.g., 0 or 0,1,2,3)")
+	cmd.Flags().IntVar(&opts.TensorParallel, "tp", 0, 
+		"tensor parallelism degree (must be 1, 2, 4, or 8)")
 	cmd.Flags().IntVar(&opts.MaxConcurrent, "max-concurrent", 0, 
 		"maximum concurrent requests (0 for unlimited)")
 	cmd.Flags().BoolVarP(&opts.Detach, "detach", "d", false,
@@ -153,6 +158,9 @@ func runStart(opts *StartOptions) error {
 	additionalConfig := make(map[string]interface{})
 	if opts.Device != "" {
 		additionalConfig["device"] = opts.Device
+	}
+	if opts.TensorParallel > 0 {
+		additionalConfig["tensor_parallel"] = opts.TensorParallel
 	}
 	if opts.MaxConcurrent > 0 {
 		additionalConfig["max_concurrent"] = opts.MaxConcurrent

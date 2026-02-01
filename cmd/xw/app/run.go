@@ -33,6 +33,9 @@ type RunOptions struct {
 
 	// Device is the device list (e.g., "0", "0,1,2,3")
 	Device string
+	
+	// TensorParallel is the tensor parallelism degree (must be 1/2/4/8)
+	TensorParallel int
 }
 
 // NewRunCommand creates the run command.
@@ -97,6 +100,7 @@ Device Selection:
 	cmd.Flags().StringVar(&opts.Alias, "alias", "", "instance alias (defaults to model ID)")
 	cmd.Flags().StringVar(&opts.Engine, "engine", "", "inference engine in format backend:mode (e.g., vllm:docker)")
 	cmd.Flags().StringVar(&opts.Device, "device", "", "device list (e.g., 0 or 0,1,2,3)")
+	cmd.Flags().IntVar(&opts.TensorParallel, "tp", 0, "tensor parallelism degree (must be 1, 2, 4, or 8)")
 
 	return cmd
 }
@@ -144,12 +148,13 @@ func runRun(opts *RunOptions) error {
 		fmt.Printf("Starting new instance: %s\n", alias)
 		
 		startOpts := &StartOptions{
-			GlobalOptions: opts.GlobalOptions,
-			Model:         opts.Model,
-			Alias:         alias,
-			Engine:        opts.Engine,
-			Device:        opts.Device,
-			Detach:        true, // Run in background for run command
+			GlobalOptions:  opts.GlobalOptions,
+			Model:          opts.Model,
+			Alias:          alias,
+			Engine:         opts.Engine,
+			Device:         opts.Device,
+			TensorParallel: opts.TensorParallel,
+			Detach:         true, // Run in background for run command
 		}
 
 		if err := runStart(startOpts); err != nil {

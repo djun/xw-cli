@@ -980,3 +980,42 @@ func getSystemArch() (string, error) {
 	}
 }
 
+// ApplyTemplateParams applies template parameters from CreateParams to the environment map.
+//
+// This is a common Docker operation that converts template parameters (key=value format)
+// into environment variables (KEY=VALUE format) suitable for Docker containers.
+//
+// Template parameter keys are converted to environment variable format:
+//   - camelCase -> CAMEL_CASE
+//   - kebab-case -> KEBAB_CASE
+//
+// Template environment variables will NOT override existing environment variables.
+// This allows explicit environment variables to take precedence over template defaults.
+//
+// Parameters:
+//   - env: Existing environment map to merge template parameters into
+//   - params: CreateParams containing TemplateParams to apply
+//
+// Example:
+//   env := map[string]string{"CUSTOM_VAR": "value"}
+//   ApplyTemplateParams(env, params) // params.TemplateParams = ["tensorParallel=4"]
+//   // Result: env = {"CUSTOM_VAR": "value", "TENSOR_PARALLEL": "4"}
+func (b *DockerRuntimeBase) ApplyTemplateParams(env map[string]string, params *CreateParams) {
+	if len(params.TemplateParams) == 0 {
+		return
+	}
+	
+	logger.Debug("Applying %d template parameter(s) to Docker environment", len(params.TemplateParams))
+	
+	templateEnv := convertTemplateParamsToEnv(params.TemplateParams)
+	
+	// Merge template environment variables (template params don't override existing env)
+	for k, v := range templateEnv {
+		if _, exists := env[k]; !exists {
+			env[k] = v
+			logger.Debug("Applied template param: %s=%s", k, v)
+		} else {
+			logger.Debug("Template param %s=%s skipped (already set in environment)", k, v)
+		}
+	}
+}

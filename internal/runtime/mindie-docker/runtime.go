@@ -199,6 +199,10 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	for k, v := range sandboxEnv {
 		env[k] = v
 	}
+	
+	// Apply template parameters from runtime_params.yaml (if any)
+	// Template params are converted to environment variables
+	r.ApplyTemplateParams(env, params)
 
 	// Set MindIE-required environment variables
 	// MODEL_PATH: Container-internal path where model files are mounted
