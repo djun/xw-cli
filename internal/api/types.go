@@ -10,33 +10,19 @@
 // HTTP transmission. The API follows RESTful principles where applicable.
 package api
 
-// DeviceType represents the type of domestic (China-made) chip device.
+// DeviceType represents specific AI chip model identifiers.
 //
-// The xw application is specifically designed to work with domestic chip
-// architectures, providing optimized AI model inference on Chinese hardware.
-// Each device type corresponds to a specific chip manufacturer or architecture.
+// Device types use precise chip model identifiers (e.g., "ascend-910b", "ascend-310p")
+// rather than brand-level abstractions. This is necessary because inference engine
+// compatibility is tied to specific chip models, not brands.
+//
+// These values are defined in device.ConfigKey constants.
 type DeviceType string
 
 const (
 	// DeviceTypeAll is a special value representing all device types.
 	// Used in queries to retrieve models compatible with any device.
 	DeviceTypeAll DeviceType = "all"
-
-	// DeviceTypeKunlun represents Baidu Kunlun XPU chip.
-	// Kunlun is Baidu's AI chip designed for deep learning workloads.
-	DeviceTypeKunlun DeviceType = "kunlun"
-
-	// DeviceTypeAscend represents Huawei Ascend NPU chip.
-	// Ascend is Huawei's AI processor series (e.g., Ascend 910, 310).
-	DeviceTypeAscend DeviceType = "ascend"
-
-	// DeviceTypeHygon represents Hygon processor.
-	// Hygon produces x86-compatible processors for the Chinese market.
-	DeviceTypeHygon DeviceType = "hygon"
-
-	// DeviceTypeLongxin represents Loongson (Longxin) processor.
-	// Loongson is a family of MIPS/LoongArch-based processors.
-	DeviceTypeLongxin DeviceType = "loongson"
 )
 
 // Model represents an AI model with its metadata and capabilities.
@@ -80,6 +66,22 @@ type Model struct {
 	// Status indicates the download status of the model.
 	// Values: "not_downloaded", "downloading", "downloaded"
 	Status string `json:"status"`
+	
+	// Source is the SourceID used for downloading (e.g., "Qwen/Qwen2.5-7B-Instruct")
+	// Empty for models not downloaded yet
+	Source string `json:"source,omitempty"`
+	
+	// Tag is the model version tag (e.g., "latest")
+	// Empty for models not downloaded yet
+	Tag string `json:"tag,omitempty"`
+	
+	// DefaultEngine is the default inference engine (e.g., "vllm:docker")
+	// Empty for models not downloaded yet
+	DefaultEngine string `json:"default_engine,omitempty"`
+	
+	// ModifiedAt is the last modification time in RFC3339 format
+	// Empty for models not downloaded yet
+	ModifiedAt string `json:"modified_at,omitempty"`
 }
 
 // ListModelsRequest represents a request to list available models.

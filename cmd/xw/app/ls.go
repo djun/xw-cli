@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tsingmao/xw/internal/api"
+	"github.com/tsingmao/xw/internal/client"
 )
 
 // ListOptions holds options for the list command
 type ListOptions struct {
 	*GlobalOptions
+	All bool // Show all models supported by current device
 }
 
 // NewListCommand creates the list (ls) command.
@@ -51,10 +54,13 @@ func NewListCommand(globalOpts *GlobalOptions) *cobra.Command {
 		Short:   "List downloaded models",
 		Long: `List models that have been downloaded.
 
-Only shows models that are currently downloaded and available locally.
-For the full list of supported models, please visit the official website.`,
+By default, only shows models that are currently downloaded and available locally.
+Use -a/--all to show all models supported by the current chip.`,
 		Example: `  # List downloaded models
   xw ls
+  
+  # List all models supported by current chip
+  xw ls -a
   
   # Same as ls
   xw list`,
@@ -62,6 +68,8 @@ For the full list of supported models, please visit the official website.`,
 			return runList(opts)
 		},
 	}
+
+	cmd.Flags().BoolVarP(&opts.All, "all", "a", false, "show all models supported by current chip")
 
 	return cmd
 }
@@ -80,6 +88,11 @@ For the full list of supported models, please visit the official website.`,
 func runList(opts *ListOptions) error {
 	client := getClient(opts.GlobalOptions)
 
+	if opts.All {
+		// List all models supported by current chip
+		return listAllModels(client)
+	}
+
 	// Query downloaded models from server
 	models, err := client.ListDownloadedModels()
 	if err != nil {
@@ -90,6 +103,7 @@ func runList(opts *ListOptions) error {
 		fmt.Println("No models downloaded.")
 		fmt.Println()
 		fmt.Println("Download a model with: xw pull <model>")
+		fmt.Println("List all supported models with: xw ls -a")
 		return nil
 	}
 
@@ -133,6 +147,80 @@ func runList(opts *ListOptions) error {
 	}
 
 	w.Flush()
+	fmt.Println()
+
+	return nil
+}
+
+// listAllModels lists all models supported by the current chip.
+func listAllModels(c *client.Client) error {
+	// Get all models from registry (device type "all" means auto-detect current chip)
+	resp, err := c.ListModelsWithStats(api.DeviceTypeAll, false)
+	if err != nil {
+		return fmt.Errorf("failed to list models: %w", err)
+	}
+
+	if len(resp.Models) == 0 {
+		fmt.Println("No models available for current chip.")
+		return nil
+	}
+
+	// Sort models by ID for consistent output
+	sort.Slice(resp.Models, func(i, j int) bool {
+		return resp.Models[i].Name < resp.Models[j].Name
+	})
+
+	// Display models in a formatted table (same format as xw ls)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "MODEL\tSOURCE\tTAG\tSIZE\tDEFAULT ENGINE\tMODIFIED")
+
+	for _, model := range resp.Models {
+		// Use values from API, with fallbacks for missing data
+		source := model.Source
+		if source == "" {
+			source = "-"
+		}
+		
+		tag := model.Tag
+		if tag == "" {
+			tag = "-"
+		}
+		
+		// Size: only show for downloaded models (those with ModifiedAt set)
+		sizeStr := "-"
+		if model.Status == "downloaded" && model.ModifiedAt != "" {
+			sizeStr = formatSize(model.Size)
+		}
+		
+		engine := model.DefaultEngine
+		if engine == "" {
+			engine = "-"
+		}
+		
+		modifiedStr := "-"
+		if model.ModifiedAt != "" {
+			if t, err := time.Parse(time.RFC3339, model.ModifiedAt); err == nil {
+				modifiedStr = formatTimeAgo(t)
+			}
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			model.Name,
+			source,
+			tag,
+			sizeStr,
+			engine,
+			modifiedStr)
+	}
+
+	w.Flush()
+	
+	// Display statistics
+	fmt.Println()
+	fmt.Printf("Total: %d models\n", resp.TotalModels)
+	if resp.AvailableModels < resp.TotalModels {
+		fmt.Printf("Available for your chip: %d models\n", resp.AvailableModels)
+	}
 	fmt.Println()
 
 	return nil

@@ -7,10 +7,9 @@
 //   - Device metadata and properties
 //   - Thread-safe access to device information
 //
-// The package supports multiple domestic chip architectures including Kunlun,
-// Ascend, Hygon, and Loongson. In production deployments, this package would
-// integrate with vendor-specific drivers and libraries for actual hardware
-// detection.
+// The package currently supports Huawei Ascend NPU chips (910B, 310P).
+// In production deployments, this package integrates with vendor-specific
+// drivers and libraries for actual hardware detection.
 package device
 
 import (
@@ -60,7 +59,7 @@ type Manager struct {
 	mu sync.RWMutex
 
 	// devices maps device types to their detected instances.
-	// Key: device type (e.g., DeviceTypeAscend)
+	// Key: device type (e.g., ConfigKeyAscend910B)
 	// Value: pointer to Device with detection results
 	devices map[api.DeviceType]*Device
 }
@@ -80,8 +79,8 @@ type Manager struct {
 // Example:
 //
 //	manager := device.NewManager()
-//	if manager.IsAvailable(api.DeviceTypeAscend) {
-//	    fmt.Println("Ascend NPU is available")
+//	if manager.IsAvailable(ConfigKeyAscend910B) {
+//	    fmt.Println("Ascend 910B NPU is available")
 //	}
 func NewManager() *Manager {
 	m := &Manager{
@@ -187,7 +186,7 @@ func (m *Manager) ListAvailable() []*Device {
 // The method is thread-safe and can be called concurrently.
 //
 // Parameters:
-//   - deviceType: The device type to check (e.g., DeviceTypeAscend)
+//   - deviceType: The device type to check (e.g., ConfigKeyAscend910B)
 //
 // Returns:
 //   - true if the device type exists and is available
@@ -195,8 +194,8 @@ func (m *Manager) ListAvailable() []*Device {
 //
 // Example:
 //
-//	if !manager.IsAvailable(api.DeviceTypeAscend) {
-//	    return fmt.Errorf("Ascend device required but not available")
+//	if !manager.IsAvailable(ConfigKeyAscend910B) {
+//	    return fmt.Errorf("Ascend 910B device required but not available")
 //	}
 func (m *Manager) IsAvailable(deviceType api.DeviceType) bool {
 	m.mu.RLock()
@@ -228,7 +227,7 @@ func (m *Manager) IsAvailable(deviceType api.DeviceType) bool {
 //
 // Example:
 //
-//	device, err := manager.GetDevice(api.DeviceTypeAscend)
+//	device, err := manager.GetDevice(ConfigKeyAscend910B)
 //	if err != nil {
 //	    log.Printf("Ascend device not found: %v", err)
 //	    return
@@ -271,7 +270,8 @@ func (m *Manager) GetDevice(deviceType api.DeviceType) (*Device, error) {
 //	}
 func (m *Manager) GetSupportedTypes() []api.DeviceType {
 	return []api.DeviceType{
-		api.DeviceTypeAscend,
+		ConfigKeyAscend910B,
+		ConfigKeyAscend310P,
 	}
 }
 

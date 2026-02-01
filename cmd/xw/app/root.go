@@ -59,7 +59,7 @@ func NewXWCommand() *cobra.Command {
 		Long: `xw is a command-line tool for AI model inference on domestic chip architectures.
 
 It provides a simple interface to list, download, and execute AI models
-optimized for Chinese-made chips including Kunlun, Ascend, Hygon, and Loongson.
+optimized for Chinese-made chips including Ascend NPU.
 
 The xw CLI communicates with a local server process over HTTP. Make sure the
 xw server is running before executing commands.`,

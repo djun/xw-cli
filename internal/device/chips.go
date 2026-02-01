@@ -9,14 +9,11 @@ import (
 
 // ChipVendor represents a chip vendor's PCI vendor ID and name
 type ChipVendor struct {
-	// VendorID is the PCI vendor ID (e.g., "0x1db7" for Baidu)
+	// VendorID is the PCI vendor ID (e.g., "0x19e5" for Huawei)
 	VendorID string
 	
 	// VendorName is the human-readable vendor name
 	VendorName string
-	
-	// DeviceType is the corresponding xw device type
-	DeviceType api.DeviceType
 }
 
 // ChipModel represents a specific chip model with its PCI device ID
@@ -54,15 +51,8 @@ var KnownVendors = []ChipVendor{
 	{
 		VendorID:   "0x19e5",
 		VendorName: "Huawei",
-		DeviceType: api.DeviceTypeAscend,
 	},
-	// TODO: Add more vendors as needed
-	// Example:
-	// {
-	//     VendorID:   "0x1db7",
-	//     VendorName: "Baidu",
-	//     DeviceType: api.DeviceTypeKunlun,
-	// },
+	// TODO: Add more vendors as they are supported
 }
 
 // KnownChips contains all supported chip models with their PCI IDs
@@ -91,7 +81,7 @@ var KnownChips = []ChipModel{
 		DeviceID:   "0xd802",
 		ModelName:  "Ascend 910B",
 		ConfigKey:  ConfigKeyAscend910B,
-		DeviceType: api.DeviceTypeAscend,
+		DeviceType: api.DeviceType(ConfigKeyAscend910B),
 		Generation: "Ascend 9xx",
 		Capabilities: []string{
 			"int8", "int16", "fp16", "fp32",
@@ -103,7 +93,7 @@ var KnownChips = []ChipModel{
 		DeviceID:   "0xd500",
 		ModelName:  "Ascend 310P",
 		ConfigKey:  ConfigKeyAscend310P,
-		DeviceType: api.DeviceTypeAscend,
+		DeviceType: api.DeviceType(ConfigKeyAscend310P),
 		Generation: "Ascend 3xx",
 		Capabilities: []string{
 			"int8", "int16", "fp16", "fp32",

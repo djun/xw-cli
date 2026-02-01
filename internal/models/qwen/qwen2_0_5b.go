@@ -3,6 +3,7 @@ package qwen
 
 import (
 	"github.com/tsingmao/xw/internal/api"
+	"github.com/tsingmao/xw/internal/device"
 	"github.com/tsingmao/xw/internal/models"
 )
 
@@ -19,7 +20,8 @@ var Qwen2_0_5B = &models.ModelSpec{
 
 	// Supported hardware
 	SupportedDevices: []api.DeviceType{
-		api.DeviceTypeAscend,
+		device.ConfigKeyAscend310P,
+		device.ConfigKeyAscend910B,
 	},
 
 	// Backend configuration

@@ -539,11 +539,45 @@ func (h *Handler) enrichModelsWithDownloadStatus(models *[]api.Model) {
 			// Check if directory has actual model files (not just empty)
 			if h.hasModelFiles(modelPath) {
 				(*models)[i].Status = "downloaded"
+				// For downloaded models, populate metadata and modification time
+				if spec := h.modelRegistry.GetSpec((*models)[i].Name); spec != nil {
+					(*models)[i].Source = spec.SourceID
+					
+					if spec.Tag != "" {
+						(*models)[i].Tag = spec.Tag
+					} else {
+						(*models)[i].Tag = "latest"
+					}
+					
+					if len(spec.Backends) > 0 {
+						backend := spec.Backends[0]
+						(*models)[i].DefaultEngine = fmt.Sprintf("%s:%s", backend.Type, backend.Mode)
+					}
+				}
+				(*models)[i].ModifiedAt = info.ModTime().Format(time.RFC3339)
 			} else {
 				(*models)[i].Status = "not_downloaded"
 			}
 		} else {
 			(*models)[i].Status = "not_downloaded"
+		}
+		
+		// For NOT downloaded models, populate metadata from ModelSpec
+		if (*models)[i].Status == "not_downloaded" {
+			if spec := h.modelRegistry.GetSpec((*models)[i].Name); spec != nil {
+				(*models)[i].Source = spec.SourceID
+				
+				if spec.Tag != "" {
+					(*models)[i].Tag = spec.Tag
+				} else {
+					(*models)[i].Tag = "latest"
+				}
+				
+				if len(spec.Backends) > 0 {
+					backend := spec.Backends[0]
+					(*models)[i].DefaultEngine = fmt.Sprintf("%s:%s", backend.Type, backend.Mode)
+				}
+			}
 		}
 	}
 }

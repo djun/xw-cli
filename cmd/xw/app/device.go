@@ -208,7 +208,7 @@ func newDeviceSupportedCommand(globalOpts *GlobalOptions) *cobra.Command {
 	}
 	
 	cmd.Flags().StringVarP(&deviceType, "type", "t", "",
-		"filter by device type (kunlun, ascend, hygon, longxin)")
+		"filter by device type (ascend)")
 	
 	return cmd
 }

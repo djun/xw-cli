@@ -54,8 +54,8 @@ type Registry struct {
 // Example:
 //
 //	registry := model.NewRegistry()
-//	models := registry.List(api.DeviceTypeAscend, false)
-//	fmt.Printf("Found %d models for Ascend\n", len(models))
+//	models := registry.List(device.ConfigKeyAscend910B, false)
+//	fmt.Printf("Found %d models for Ascend 910B\n", len(models))
 func NewRegistry() *Registry {
 	r := &Registry{
 		models: make(map[string]*api.Model),
@@ -185,7 +185,7 @@ func (r *Registry) Get(name string) (*api.Model, error) {
 //	newModel := &api.Model{
 //	    Name: "custom-model",
 //	    Version: "1.0.0",
-//	    SupportedDevices: []api.DeviceType{api.DeviceTypeAscend},
+//	    SupportedDevices: []api.DeviceType{device.ConfigKeyAscend910B, device.ConfigKeyAscend310P},
 //	}
 //	if err := registry.Register(newModel); err != nil {
 //	    log.Fatalf("Failed to register model: %v", err)
@@ -324,6 +324,24 @@ func (r *Registry) CountAvailableModels(detectedDevices []api.DeviceType) int {
 	}
 
 	return count
+}
+
+// GetSpec retrieves a model specification by its ID.
+//
+// Parameters:
+//   - modelID: The model identifier
+//
+// Returns:
+//   - Pointer to ModelSpec if found, nil otherwise
+func (r *Registry) GetSpec(modelID string) *ModelSpec {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	
+	if r.specs == nil {
+		return nil
+	}
+	
+	return r.specs[modelID]
 }
 
 

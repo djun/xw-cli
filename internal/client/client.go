@@ -13,7 +13,7 @@
 // Example usage:
 //
 //	client := client.NewClient("http://localhost:11581")
-//	models, err := client.ListModels(api.DeviceTypeAscend, false)
+//	models, err := client.ListModels(device.ConfigKeyAscend910B, false)
 //	if err != nil {
 //	    log.Fatalf("Failed to list models: %v", err)
 //	}
@@ -92,8 +92,8 @@ func NewClient(baseURL string) *Client {
 //
 // Example:
 //
-//	// List all models compatible with Ascend devices
-//	models, err := client.ListModels(api.DeviceTypeAscend, false)
+//	// List all models compatible with Ascend 910B devices
+//	models, err := client.ListModels(device.ConfigKeyAscend910B, false)
 //	if err != nil {
 //	    log.Fatalf("Failed to list models: %v", err)
 //	}
