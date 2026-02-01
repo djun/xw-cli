@@ -225,12 +225,7 @@ func (s *AscendSandbox) GetCapabilities() []string {
 //   - Error if image configuration is not found
 func (s *AscendSandbox) GetDefaultImage(devices []runtime.DeviceInfo) (string, error) {
 	// Load runtime images configuration
-	cfg := config.NewDefaultConfig()
-	if err := cfg.EnsureDirectories(); err != nil {
-		return "", fmt.Errorf("failed to ensure config directories: %w", err)
-	}
-	
-	runtimeImages, err := cfg.GetOrCreateRuntimeImagesConfig()
+	runtimeImages, err := config.LoadRuntimeImagesConfig("")
 	if err != nil {
 		return "", fmt.Errorf("failed to load runtime images config: %w", err)
 	}
@@ -265,5 +260,42 @@ func (s *AscendSandbox) GetDockerRuntime() string {
 func (s *AscendSandbox) GetSharedMemorySize() int64 {
 	// 500GB shared memory for multi-device distributed inference
 	return 500 * 1024 * 1024 * 1024
+}
+
+// supportedDeviceTypes lists all device types supported by this sandbox.
+//
+// When adding support for new Ascend devices, add their config_key here.
+// Each device type must match the config_key from devices.yaml configuration.
+var supportedDeviceTypes = []string{
+	"ascend-910b",
+	"ascend-310p",
+	// Add more Ascend device types here as they are tested and validated
+}
+
+// Supports checks if this sandbox supports the given device type.
+//
+// AscendSandbox only supports explicitly listed Ascend NPU device types.
+// This ensures that each device type is explicitly validated and tested
+// before being enabled in production.
+//
+// Parameters:
+//   - deviceType: Device type string (e.g., "ascend-910b", "ascend-310p")
+//
+// Returns:
+//   - true if this device type is in the supported list
+//
+// Example:
+//
+//	sandbox := NewAscendSandbox()
+//	if sandbox.Supports("ascend-910b") {
+//	    // Use this sandbox
+//	}
+func (s *AscendSandbox) Supports(deviceType string) bool {
+	for _, supported := range supportedDeviceTypes {
+		if deviceType == supported {
+			return true
+		}
+	}
+	return false
 }
 

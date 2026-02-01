@@ -562,6 +562,11 @@ func (m *Manager) Run(configDir string, opts *RunOptions) (*RunInstance, error) 
 		Config:         opts.AdditionalConfig,
 	}
 	
+	logger.Debug("Run returning: ID=%s, BackendType=%s, DeploymentMode=%s, Port=%d, opts.BackendType=%s", 
+		runInstance.ID, runInstance.BackendType, runInstance.DeploymentMode, runInstance.Port, opts.BackendType)
+	logger.Debug("Instance metadata: backend_type=%s, deployment_mode=%s", 
+		instance.Metadata["backend_type"], instance.Metadata["deployment_mode"])
+	
 	return runInstance, nil
 }
 

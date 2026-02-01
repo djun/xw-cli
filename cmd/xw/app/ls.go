@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tsingmao/xw/cmd/xw/client"
 	"github.com/tsingmao/xw/internal/api"
-	"github.com/tsingmao/xw/internal/client"
 )
 
 // ListOptions holds options for the list command
@@ -154,76 +154,125 @@ func runList(opts *ListOptions) error {
 
 // listAllModels lists all models supported by the current chip.
 func listAllModels(c *client.Client) error {
-	// Get all models from registry (device type "all" means auto-detect current chip)
-	resp, err := c.ListModelsWithStats(api.DeviceTypeAll, false)
+	// Get all models from registry with showAll=true to include unsupported models
+	resp, err := c.ListModelsWithStats(api.DeviceTypeAll, true)
 	if err != nil {
 		return fmt.Errorf("failed to list models: %w", err)
 	}
 
 	if len(resp.Models) == 0 {
-		fmt.Println("No models available for current chip.")
+		fmt.Println("No models available.")
 		return nil
 	}
 
-	// Sort models by ID for consistent output
-	sort.Slice(resp.Models, func(i, j int) bool {
-		return resp.Models[i].Name < resp.Models[j].Name
+	// Separate models into supported and unsupported
+	var supportedModels []api.Model
+	var unsupportedModels []api.Model
+	
+	for _, model := range resp.Models {
+		if isModelSupported(model, resp.DetectedDevices) {
+			supportedModels = append(supportedModels, model)
+		} else {
+			unsupportedModels = append(unsupportedModels, model)
+		}
+	}
+
+	// Sort both lists by name
+	sort.Slice(supportedModels, func(i, j int) bool {
+		return supportedModels[i].Name < supportedModels[j].Name
+	})
+	sort.Slice(unsupportedModels, func(i, j int) bool {
+		return unsupportedModels[i].Name < unsupportedModels[j].Name
 	})
 
-	// Display models in a formatted table (same format as xw ls)
+	// Display models in a formatted table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "MODEL\tSOURCE\tTAG\tSIZE\tDEFAULT ENGINE\tMODIFIED")
 
-	for _, model := range resp.Models {
-		// Use values from API, with fallbacks for missing data
-		source := model.Source
-		if source == "" {
-			source = "-"
-		}
-		
-		tag := model.Tag
-		if tag == "" {
-			tag = "-"
-		}
-		
-		// Size: only show for downloaded models (those with ModifiedAt set)
-		sizeStr := "-"
-		if model.Status == "downloaded" && model.ModifiedAt != "" {
-			sizeStr = formatSize(model.Size)
-		}
-		
-		engine := model.DefaultEngine
-		if engine == "" {
-			engine = "-"
-		}
-		
-		modifiedStr := "-"
-		if model.ModifiedAt != "" {
-			if t, err := time.Parse(time.RFC3339, model.ModifiedAt); err == nil {
-				modifiedStr = formatTimeAgo(t)
-			}
-		}
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			model.Name,
-			source,
-			tag,
-			sizeStr,
-			engine,
-			modifiedStr)
+	// Display supported models first
+	for _, model := range supportedModels {
+		printModelRow(w, model)
 	}
 
 	w.Flush()
 	
-	// Display statistics
-	fmt.Println()
-	fmt.Printf("Total: %d models\n", resp.TotalModels)
-	if resp.AvailableModels < resp.TotalModels {
-		fmt.Printf("Available for your chip: %d models\n", resp.AvailableModels)
+	// Add separator with statistics if there are unsupported models
+	if len(unsupportedModels) > 0 {
+		fmt.Println()
+		fmt.Printf("──────────────────────────────────── Available: %d, Not supported: %d ────────────────────────────────────\n", 
+			len(supportedModels), len(unsupportedModels))
+		fmt.Println()
+		fmt.Fprintln(w, "MODEL\tSOURCE\tTAG\tSIZE\tDEFAULT ENGINE\tMODIFIED")
+		
+		// Display unsupported models
+		for _, model := range unsupportedModels {
+			printModelRow(w, model)
+		}
+		w.Flush()
 	}
+	
 	fmt.Println()
 
 	return nil
+}
+
+// isModelSupported checks if a model is supported by the detected devices.
+func isModelSupported(model api.Model, detectedDevices []api.DeviceType) bool {
+	// If no devices detected, model is not supported
+	if len(detectedDevices) == 0 {
+		return false
+	}
+	
+	// Check if any of the model's supported devices matches detected devices
+	for _, modelDevice := range model.SupportedDevices {
+		for _, detectedDevice := range detectedDevices {
+			if modelDevice == detectedDevice {
+				return true
+			}
+		}
+	}
+	
+	return false
+}
+
+// printModelRow prints a single model row in the table.
+func printModelRow(w *tabwriter.Writer, model api.Model) {
+	// Use values from API, with fallbacks for missing data
+	source := model.Source
+	if source == "" {
+		source = "-"
+	}
+	
+	tag := model.Tag
+	if tag == "" {
+		tag = "-"
+	}
+	
+	// Size: only show for downloaded models
+	sizeStr := "-"
+	if model.Status == "downloaded" && model.ModifiedAt != "" {
+		sizeStr = formatSize(model.Size)
+	}
+	
+	engine := model.DefaultEngine
+	if engine == "" {
+		engine = "-"
+	}
+	
+	modifiedStr := "-"
+	if model.ModifiedAt != "" {
+		if t, err := time.Parse(time.RFC3339, model.ModifiedAt); err == nil {
+			modifiedStr = formatTimeAgo(t)
+		}
+	}
+
+	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		model.Name,
+		source,
+		tag,
+		sizeStr,
+		engine,
+		modifiedStr)
 }
 
 // formatSize converts bytes to a human-readable size string.

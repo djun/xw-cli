@@ -10,7 +10,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/tsingmao/xw/internal/client"
+	"github.com/tsingmao/xw/cmd/xw/client"
 )
 
 const (

@@ -804,6 +804,33 @@ type DeviceSandbox interface {
 	//   - true if --privileged flag is required
 	RequiresPrivileged() bool
 
+	// Supports checks if this sandbox supports the given device type.
+	//
+	// This method allows sandboxes to declare which device types they support.
+	// Runtimes use this to automatically select the appropriate sandbox
+	// implementation for a given device type without hardcoding device lists.
+	//
+	// Each sandbox should explicitly list the device types it has been
+	// tested and validated to work with. Device types must match the
+	// config_key values from the device configuration (devices.yaml).
+	//
+	// Parameters:
+	//   - deviceType: Device type string (e.g., "ascend-910b", "ascend-310p")
+	//
+	// Returns:
+	//   - true if this sandbox supports the device type
+	//
+	// Example:
+	//
+	//	func (s *AscendSandbox) Supports(deviceType string) bool {
+	//	    supportedTypes := []string{"ascend-910b", "ascend-310p"}
+	//	    for _, t := range supportedTypes {
+	//	        if deviceType == t { return true }
+	//	    }
+	//	    return false
+	//	}
+	Supports(deviceType string) bool
+
 	// GetCapabilities returns Linux capabilities needed by the container.
 	//
 	// Linux capabilities provide fine-grained privilege control. Even when

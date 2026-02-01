@@ -237,6 +237,8 @@ func (h *Handler) runModelAsync(ctx context.Context, reqBody *struct {
 		AdditionalConfig: additionalConfig,
 	}
 	
+	logger.Debug("RunOptions: BackendType=%s, DeploymentMode=%s", opts.BackendType, opts.DeploymentMode)
+	
 	// Start the model
 	eventCh <- "Starting model instance..."
 	// Pass config directory to runtime manager, just like downloader uses h.config.Storage.ModelsDir

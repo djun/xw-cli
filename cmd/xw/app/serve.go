@@ -137,12 +137,12 @@ func runServe(opts *ServeOptions) error {
 	}
 	logger.Info("Server identity: %s", identity.Name)
 	
-	// Get or create runtime images configuration
-	_, err = cfg.GetOrCreateRuntimeImagesConfig()
+	// Load runtime images configuration
+	_, err = config.LoadRuntimeImagesConfig("")
 	if err != nil {
-		return fmt.Errorf("failed to initialize runtime images config: %w", err)
+		return fmt.Errorf("failed to load runtime images config: %w", err)
 	}
-	logger.Info("Runtime images configuration initialized")
+	logger.Info("Runtime images configuration loaded")
 	
 	// Initialize models from configuration
 	if err := server.InitializeModels(); err != nil {

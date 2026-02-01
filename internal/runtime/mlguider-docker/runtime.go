@@ -65,6 +65,12 @@ type Runtime struct {
 	*runtime.DockerRuntimeBase
 }
 
+// sandboxRegistry holds all registered sandbox implementations for MLGuider
+var sandboxRegistry = []func() runtime.DeviceSandbox{
+	func() runtime.DeviceSandbox { return NewAscendSandbox() },
+	// Add more sandbox constructors here as new chips are supported
+}
+
 // NewRuntime creates and initializes a new MLGuider Docker runtime.
 //
 // Initialization Steps:
@@ -179,15 +185,22 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		return nil, fmt.Errorf("at least one device is required for MLGuider")
 	}
 
-	// Select device sandbox based on device type
+	// Select device sandbox based on device type by querying all registered sandboxes
 	var sandbox runtime.DeviceSandbox
-	deviceType := params.Devices[0].Type
-
-	switch deviceType {
-	case "ascend-910b", "ascend-310p":
-		sandbox = NewAscendSandbox()
-	default:
-		return nil, fmt.Errorf("unsupported device type for MLGuider: %s", deviceType)
+	deviceType := string(params.Devices[0].Type)
+	
+	// Try each registered sandbox until we find one that supports this device type
+	for _, sandboxConstructor := range sandboxRegistry {
+		sb := sandboxConstructor()
+		if sb.Supports(deviceType) {
+			sandbox = sb
+			logger.Debug("Selected sandbox for device type %s: %T", deviceType, sandbox)
+			break
+		}
+	}
+	
+	if sandbox == nil {
+		return nil, fmt.Errorf("no sandbox found for device type: %s", deviceType)
 	}
 
 	// Prepare sandbox-specific environment variables
