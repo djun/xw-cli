@@ -161,6 +161,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/models/show", h.ShowModel)
 	mux.HandleFunc("/api/models/pull", h.PullModel)
 	
+	// Device management endpoints
+	mux.HandleFunc("/api/devices/list", h.ListDevices)
+	mux.HandleFunc("/api/devices/supported", h.GetSupportedDevices)
+	
 	// Runtime management endpoints
 	mux.HandleFunc("/api/runtime/start", h.StartModel)
 	mux.HandleFunc("/api/runtime/instances", h.ListInstances)

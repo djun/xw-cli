@@ -1,4 +1,4 @@
-// Package modelscope provides a pure Go implementation of ModelScope model downloading.
+// Package models - modelscope.go provides a pure Go implementation of ModelScope model downloading.
 //
 // This package implements the core functionality of ModelScope's snapshot_download
 // without requiring Python dependencies or external binaries. It directly interacts
@@ -15,7 +15,7 @@
 //
 //	client := modelscope.NewClient()
 //	modelPath, err := client.DownloadModel(ctx, "Qwen/Qwen2-0.5B", "/path/to/cache", progressFunc)
-package modelscope
+package models
 
 import (
 	"context"

@@ -13,7 +13,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 
-	"github.com/tsingmao/xw/internal/device"
+	"github.com/tsingmao/xw/internal/config"
 	"github.com/tsingmao/xw/internal/logger"
 )
 
@@ -909,8 +909,8 @@ func GetImageForEngine(configMap map[string]map[string]map[string]string, device
 		return "", fmt.Errorf("device model name is empty")
 	}
 	
-	// Map chip model name to configuration key using device package
-	configKey, err := device.GetConfigKeyByModelName(chipModelName)
+	// Map chip model name to configuration key using config package
+	configKey, err := config.GetConfigKeyByModelName(chipModelName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get config key: %w", err)
 	}

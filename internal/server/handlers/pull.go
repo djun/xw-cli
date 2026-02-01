@@ -329,7 +329,7 @@ func (h *Handler) adjustModelConfigForChip(modelPath string) error {
 	has310P := false
 	for _, chips := range chipsByType {
 		for _, chip := range chips {
-			if chip.ConfigKey == device.ConfigKeyAscend310P {
+			if chip.ConfigKey == "ascend-310p" {
 				has310P = true
 				break
 			}

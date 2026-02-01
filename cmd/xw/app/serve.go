@@ -144,6 +144,12 @@ func runServe(opts *ServeOptions) error {
 	}
 	logger.Info("Runtime images configuration initialized")
 	
+	// Initialize models from configuration
+	if err := server.InitializeModels(); err != nil {
+		// Non-fatal error, server can continue without pre-configured models
+		logger.Warn("Model initialization incomplete, continuing...")
+	}
+	
 	// Initialize runtime manager with available runtimes and server identity
 	runtimeMgr, err := server.InitializeRuntimeManager()
 	if err != nil {

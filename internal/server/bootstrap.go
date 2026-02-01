@@ -4,14 +4,31 @@ import (
 	"fmt"
 	
 	"github.com/tsingmao/xw/internal/logger"
+	"github.com/tsingmao/xw/internal/models"
 	"github.com/tsingmao/xw/internal/runtime"
 	mindiedocker "github.com/tsingmao/xw/internal/runtime/mindie-docker"
 	mlguiderdocker "github.com/tsingmao/xw/internal/runtime/mlguider-docker"
 	vllmdocker "github.com/tsingmao/xw/internal/runtime/vllm-docker"
-	
-	// Import model packages to trigger model registration via init()
-	_ "github.com/tsingmao/xw/internal/models/qwen"
 )
+
+// InitializeModels loads and registers models from configuration.
+//
+// This function should be called during server startup to populate the
+// model registry with models defined in the configuration file.
+//
+// Returns:
+//   - Error if model configuration loading fails (non-fatal, logs warning)
+func InitializeModels() error {
+	logger.Info("Loading models from configuration...")
+	
+	if err := models.LoadAndRegisterModelsFromConfig(""); err != nil {
+		logger.Warn("Failed to load models from configuration: %v", err)
+		logger.Warn("Server will start without pre-configured models")
+		return err
+	}
+	
+	return nil
+}
 
 // InitializeRuntimeManager creates and initializes the runtime manager
 // with all available runtime implementations.

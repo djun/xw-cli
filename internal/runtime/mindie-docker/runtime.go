@@ -27,7 +27,6 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/go-connections/nat"
 
-	"github.com/tsingmao/xw/internal/device"
 	"github.com/tsingmao/xw/internal/logger"
 	"github.com/tsingmao/xw/internal/runtime"
 )
@@ -172,7 +171,7 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	deviceType := params.Devices[0].Type
 
 	switch deviceType {
-	case device.ConfigKeyAscend910B, device.ConfigKeyAscend310P:
+	case "ascend-910b", "ascend-310p":
 		sandbox = NewAscendSandbox()
 	default:
 		return nil, fmt.Errorf("unsupported device type: %s", deviceType)

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/tsingmao/xw/internal/logger"
-	"github.com/tsingmao/xw/internal/modelscope"
+	"github.com/tsingmao/xw/internal/models"
 )
 
 // downloadModelStreaming downloads an AI model with real-time SSE progress streaming.
@@ -69,7 +69,7 @@ func (h *Handler) downloadModelStreaming(ctx context.Context, modelName, modelID
 	logger.Info("Starting Go-native download for model %s (ID: %s, tag: %s) to %s", modelName, modelID, version, modelsDir)
 
 	// Create ModelScope client
-	client := modelscope.NewClient()
+	client := models.NewClient()
 	
 	// Use the request context - it will be cancelled when client disconnects
 	// This ensures downloads are stopped when the client disconnects (Ctrl+C)

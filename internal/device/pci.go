@@ -8,6 +8,7 @@ import (
 	"strings"
 	
 	"github.com/tsingmao/xw/internal/api"
+	"github.com/tsingmao/xw/internal/config"
 )
 
 // PCIDevice represents a PCI device with its identifiers
@@ -119,7 +120,7 @@ func readPCIFile(path string) (string, error) {
 
 // FindAIChips scans for known AI chips on the system
 //
-// This function combines PCI device scanning with the known chip database
+// This function combines PCI device scanning with the chip configuration
 // to identify AI accelerators present in the system.
 //
 // Returns:
@@ -134,24 +135,30 @@ func FindAIChips() (map[string][]DetectedChip, error) {
 	detected := make(map[string][]DetectedChip)
 	
 	for _, device := range devices {
-		chip := GetChipByID(device.VendorID, device.DeviceID)
-		if chip == nil {
-			// Not a known AI chip
+		// Lookup chip from configuration
+		configChip, err := config.LookupChipModelByPCIID("", device.VendorID, device.DeviceID)
+		if err != nil {
+			// Configuration loading error
+			continue
+		}
+		if configChip == nil {
+			// Not a known AI chip in configuration
 			continue
 		}
 		
+		// Found in configuration
 		detectedChip := DetectedChip{
 			VendorID:     device.VendorID,
 			DeviceID:     device.DeviceID,
 			BusAddress:   device.BusAddress,
-			ModelName:    chip.ModelName,
-			ConfigKey:    chip.ConfigKey,
-			DeviceType:   chip.DeviceType,
-			Generation:   chip.Generation,
-			Capabilities: chip.Capabilities,
+			ModelName:    configChip.ModelName,
+			ConfigKey:    configChip.ConfigKey,
+			DeviceType:   configChip.DeviceType,
+			Generation:   configChip.Generation,
+			Capabilities: configChip.Capabilities,
 		}
 		
-		deviceType := string(chip.DeviceType)
+		deviceType := string(configChip.DeviceType)
 		detected[deviceType] = append(detected[deviceType], detectedChip)
 	}
 	
@@ -161,28 +168,28 @@ func FindAIChips() (map[string][]DetectedChip, error) {
 // DetectedChip represents a detected AI chip with full information
 type DetectedChip struct {
 	// VendorID is the PCI vendor ID
-	VendorID string
+	VendorID string `json:"vendor_id"`
 	
 	// DeviceID is the PCI device ID
-	DeviceID string
+	DeviceID string `json:"device_id"`
 	
 	// BusAddress is the PCI bus address
-	BusAddress string
+	BusAddress string `json:"bus_address"`
 	
 	// ModelName is the chip model name
-	ModelName string
+	ModelName string `json:"model_name"`
 	
 	// ConfigKey is the key used in runtime configuration
-	ConfigKey string
+	ConfigKey string `json:"config_key"`
 	
 	// DeviceType is the xw device type
-	DeviceType api.DeviceType
+	DeviceType api.DeviceType `json:"device_type"`
 	
 	// Generation is the chip generation
-	Generation string
+	Generation string `json:"generation"`
 	
 	// Capabilities lists the chip's capabilities
-	Capabilities []string
+	Capabilities []string `json:"capabilities"`
 }
 
 // ParseLspciOutput parses the output of `lspci -nn` command

@@ -1,0 +1,44 @@
+# XW Device Configuration
+# This file defines AI chip vendors and models supported by xw.
+#
+# Configuration File Locations (in priority order):
+#   1. Path specified in LoadDevicesConfig(path)
+#   2. XW_DEVICE_CONFIG environment variable
+#   3. /etc/xw/devices.yaml (default)
+
+version: "1.0"
+
+vendors:
+  # Huawei Ascend NPU Series
+  - vendor_name: Huawei
+    vendor_id: "0x19e5"
+    
+    chip_models:
+      # Ascend 910B
+      - config_key: ascend-910b
+        model_name: Ascend 910B
+        device_id: "0xd802"
+        generation: Ascend 9xx
+        capabilities:
+          - int8
+          - int16
+          - fp16
+          - fp32
+      
+      # Ascend 310P
+      - config_key: ascend-310p
+        model_name: Ascend 310P
+        device_id: "0xd500"
+        generation: Ascend 3xx
+        capabilities:
+          - int8
+          - int16
+          - fp16
+          - fp32
+
+# Notes:
+# - config_key: Unique identifier used in runtime configuration and model definitions
+# - vendor_id and device_id: PCIe identification (16-bit hex values, get via: lspci -nn)
+# - capabilities: Hardware features for compatibility checking
+
+

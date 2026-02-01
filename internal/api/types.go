@@ -262,3 +262,33 @@ type ErrorResponse struct {
 	// Examples: "MODEL_NOT_FOUND", "INVALID_REQUEST", "AUTH_FAILED"
 	Code string `json:"code,omitempty"`
 }
+
+// DeviceListResponse represents the response from listing devices.
+//
+// This response contains all devices detected on the server machine,
+// including their current status and availability.
+// The devices field contains device.Device objects with JSON serialization.
+type DeviceListResponse struct {
+	// Devices is the list of detected AI accelerator devices (device.Device type).
+	Devices interface{} `json:"devices"`
+}
+
+// SupportedDevicesRequest represents a request to query supported device types.
+//
+// This optional request allows filtering or querying specific device
+// type information from the server's configuration.
+type SupportedDevicesRequest struct {
+	// Type is an optional filter for device types.
+	// If empty, all supported device types are returned.
+	Type string `json:"type,omitempty"`
+}
+
+// SupportedDevicesResponse represents the response from querying supported devices.
+//
+// This response contains the list of device types that are configured
+// and supported by the server, based on the loaded configuration files.
+type SupportedDevicesResponse struct {
+	// DeviceTypes is the list of supported device model identifiers.
+	// Examples: ["ascend-910b", "ascend-310p"]
+	DeviceTypes []string `json:"device_types"`
+}

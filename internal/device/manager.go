@@ -18,6 +18,8 @@ import (
 	"sync"
 
 	"github.com/tsingmao/xw/internal/api"
+	"github.com/tsingmao/xw/internal/config"
+	"github.com/tsingmao/xw/internal/logger"
 )
 
 // Device represents a detected domestic chip device with its metadata.
@@ -29,20 +31,20 @@ import (
 type Device struct {
 	// Type is the device type identifying the chip architecture.
 	// Example: DeviceTypeAscend
-	Type api.DeviceType
+	Type api.DeviceType `json:"type"`
 
 	// Name is the human-readable device name.
 	// Example: "Huawei Ascend 910B"
-	Name string
+	Name string `json:"name"`
 
 	// Available indicates if the device is currently available for use.
 	// A device may be unavailable if it's in use, has an error, or lacks drivers.
-	Available bool
+	Available bool `json:"available"`
 
 	// Properties contains device-specific metadata and capabilities.
 	// Common keys: "vendor", "version", "memory", "cores"
 	// Values are stored as strings for flexibility.
-	Properties map[string]string
+	Properties map[string]string `json:"properties"`
 }
 
 // Manager manages device detection and maintains device availability state.
@@ -254,9 +256,8 @@ func (m *Manager) GetDevice(deviceType api.DeviceType) (*Device, error) {
 //   - Validation of configuration files
 //   - Documentation and help text generation
 //
-// The returned slice is static and represents the compile-time supported
-// devices, not runtime-detected devices. Use ListAvailable() to get only
-// detected devices.
+// The method reads device types from configuration. If configuration loading
+// fails, it returns a fallback list of known device types.
 //
 // Returns:
 //   - A slice of all supported DeviceType values.
@@ -269,10 +270,14 @@ func (m *Manager) GetDevice(deviceType api.DeviceType) (*Device, error) {
 //	    fmt.Printf("- %s\n", dt)
 //	}
 func (m *Manager) GetSupportedTypes() []api.DeviceType {
-	return []api.DeviceType{
-		ConfigKeyAscend910B,
-		ConfigKeyAscend310P,
+	// Load from configuration
+	types, err := config.GetSupportedDeviceTypes("")
+	if err != nil {
+		// Configuration is required
+		logger.Warn("Failed to load device types from configuration: %v", err)
+		return []api.DeviceType{}
 	}
+	return types
 }
 
 // GetDetectedDeviceTypes returns the types of all detected devices.
@@ -305,4 +310,40 @@ func (m *Manager) GetDetectedDeviceTypes() []api.DeviceType {
 	}
 
 	return types
+}
+
+// ListDetectedChips returns detailed information for all detected AI chips.
+//
+// This method performs a fresh scan of the system and returns individual
+// chip information including PCI addresses, vendor/device IDs, and capabilities.
+// Unlike ListAvailable() which returns aggregated Device entries, this returns
+// one entry per physical chip.
+//
+// Returns:
+//   - A slice of DetectedChip with details for each physical chip
+//   - An error if hardware scanning fails
+//
+// Example:
+//
+//	chips, err := manager.ListDetectedChips()
+//	if err != nil {
+//	    return err
+//	}
+//	for _, chip := range chips {
+//	    fmt.Printf("%s: %s at %s\n", chip.DeviceType, chip.ModelName, chip.BusAddress)
+//	}
+func (m *Manager) ListDetectedChips() ([]DetectedChip, error) {
+	// Scan for AI chips
+	chipsMap, err := FindAIChips()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find AI chips: %w", err)
+	}
+
+	// Flatten the map into a single slice
+	var allChips []DetectedChip
+	for _, chips := range chipsMap {
+		allChips = append(allChips, chips...)
+	}
+
+	return allChips, nil
 }
