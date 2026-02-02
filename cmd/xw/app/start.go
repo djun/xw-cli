@@ -246,7 +246,7 @@ func runStart(opts *StartOptions) error {
 	
 	// Success
 	fmt.Println()
-	fmt.Println("✓ Model started successfully")
+	fmt.Println("✓ Resources pre-allocated. Initializing inference service...")
 	fmt.Println()
 	
 	// If detach mode, just show info and return

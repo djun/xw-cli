@@ -336,8 +336,10 @@ func (h *Handler) ListInstances(w http.ResponseWriter, r *http.Request) {
 	
 	// Check real status for each instance and update state
 	for _, inst := range instances {
-		// Only check running instances
-		if inst.State == runtime.StateRunning {
+		// Check both running and starting instances
+		// StateStarting: Container started but may not be ready yet
+		// StateRunning: Container confirmed running, checking if endpoint is ready
+		if inst.State == runtime.StateRunning || inst.State == runtime.StateStarting {
 			if inst.Port == 0 {
 				// Running but no port assigned - unknown state
 				inst.State = runtime.StateUnknown
@@ -347,10 +349,15 @@ func (h *Handler) ListInstances(w http.ResponseWriter, r *http.Request) {
 				
 				// Check if endpoint is actually accessible
 				if h.checkEndpointAccessible(endpoint) {
+					// Endpoint is ready!
 					inst.State = runtime.StateReady
 				} else {
-					// Running but endpoint not accessible - unhealthy
-					inst.State = runtime.StateUnhealthy
+					// Container running but endpoint not accessible yet
+					// Keep as starting if it was starting, otherwise mark unhealthy
+					if inst.State != runtime.StateStarting {
+						inst.State = runtime.StateUnhealthy
+					}
+					// If it was StateStarting, keep it as starting (still warming up)
 				}
 			}
 		}

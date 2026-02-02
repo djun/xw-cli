@@ -338,36 +338,20 @@ func (b *DockerRuntimeBase) Get(ctx context.Context, instanceID string) (*Instan
 //   - inst: Instance to check
 //
 // Thread Safety: Acquires lock when updating state
+// updateInstanceStateFromContainer synchronizes instance state with actual container state.
+//
+// This method uses the centralized state management module to ensure consistent
+// state mapping across the codebase. It only updates instances in active states
+// (starting, running, ready) to detect unexpected exits.
+//
+// Thread Safety: This method acquires the mutex if state change is needed
 func (b *DockerRuntimeBase) updateInstanceStateFromContainer(ctx context.Context, inst *Instance) {
-	// Only check containers that are supposed to be running or starting
-	if inst.State != StateStarting && inst.State != StateRunning && inst.State != StateReady {
-		return
-	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	
-	containerID, ok := inst.Metadata["container_id"]
-	if !ok || containerID == "" {
-		return
-	}
-	
-	// Inspect container to get actual status
-	inspect, err := b.client.ContainerInspect(ctx, containerID)
-	if err != nil {
-		logger.Warn("Failed to inspect container %s (instance: %s): %v", containerID[:12], inst.ID, err)
-		return
-	}
-	
-	// If container has exited, update state to unhealthy
-	if !inspect.State.Running {
-		exitCode := inspect.State.ExitCode
-		errorMsg := inspect.State.Error
-		
-		b.mu.Lock()
-		inst.State = StateUnhealthy
-		b.mu.Unlock()
-		
-		logger.Warn("Container %s (instance: %s) exited unexpectedly (exit code: %d, error: %s)", 
-			containerID[:12], inst.ID, exitCode, errorMsg)
-	}
+	// Use centralized state management - pass instance by value to check without holding lock
+	// Note: We hold the lock for the entire operation to ensure atomicity
+	UpdateInstanceStateFromContainer(ctx, b.client, inst)
 }
 
 // List returns all instances managed by this runtime.
@@ -461,16 +445,17 @@ func (b *DockerRuntimeBase) Logs(ctx context.Context, instanceID string, follow 
 // This method performs container restoration by:
 //   1. Querying Docker for containers with matching runtime label
 //   2. Filtering by server name (if configured) for multi-server support
-//   3. Extracting container metadata and port mappings
-//   4. Marking allocated ports as used to prevent conflicts
-//   5. Registering instances in the tracking map
+//   3. Inspecting each container using centralized state management
+//   4. Extracting container metadata and port mappings
+//   5. Marking allocated ports as used to prevent conflicts
+//   6. Registering instances in the tracking map
 //
 // This allows the runtime to resume managing containers after a restart,
 // enabling seamless server upgrades and crash recovery.
 //
-// Container State Mapping:
-//   - Docker "running" -> StateRunning
-//   - Docker "created", "exited", etc. -> StateStopped
+// State Management:
+//   Uses InspectContainerState() for consistent state mapping across the codebase.
+//   See state_manager.go for detailed state mapping rules.
 //
 // Port Allocation:
 //   Discovered ports are marked as used in the global port allocator to
@@ -520,10 +505,16 @@ func (b *DockerRuntimeBase) LoadExistingContainers(ctx context.Context) error {
 			}
 		}
 
-		// Map Docker container state to instance state
-		state := StateStopped
-		if c.State == "running" {
-			state = StateRunning
+		// Inspect container to get detailed state using centralized state management
+		stateInfo, err := InspectContainerState(ctx, b.client, c.ID)
+		if err != nil {
+			logger.Warn("Failed to inspect container %s (instance %s) during load: %v",
+				c.ID[:12], instanceID, err)
+			// Fallback: use basic state from list
+			stateInfo = &ContainerStateInfo{
+				State:        StateUnknown,
+				ErrorMessage: fmt.Sprintf("Failed to inspect: %v", err),
+			}
 		}
 
 		// Extract port mapping from container
@@ -551,7 +542,8 @@ func (b *DockerRuntimeBase) LoadExistingContainers(ctx context.Context) error {
 
 		// Get accurate start time for running containers
 		startedAt := createdAt // Default to creation time
-		if state == StateRunning {
+		if stateInfo.IsRunning {
+			// For running containers, get precise start time
 			if inspectData, err := b.client.ContainerInspect(ctx, c.ID); err == nil {
 				if inspectData.State != nil && inspectData.State.StartedAt != "" {
 					if parsedTime, err := time.Parse(time.RFC3339Nano, inspectData.State.StartedAt); err == nil {
@@ -573,18 +565,24 @@ func (b *DockerRuntimeBase) LoadExistingContainers(ctx context.Context) error {
 			RuntimeName: b.runtimeName,
 			ModelID:     c.Labels["xw.model_id"],
 			Alias:       c.Labels["xw.alias"],
-			State:       state,
+			State:       stateInfo.State,
 			Port:        port,
 			CreatedAt:   createdAt,
 			StartedAt:   startedAt,
 			Metadata:    metadata,
+			Error:       stateInfo.ErrorMessage,
 		}
 
 		b.instances[instanceID] = instance
 		loadedCount++
 
-		logger.Info("Loaded existing container: %s (instance: %s, state: %s, port: %d)",
-			c.ID[:12], instanceID, state, port)
+		if stateInfo.ErrorMessage != "" {
+			logger.Warn("Loaded container %s (instance %s) in error state: %s [port: %d]",
+				c.ID[:12], instanceID, stateInfo.ErrorMessage, port)
+		} else {
+			logger.Info("Loaded container %s (instance %s) [state: %s, port: %d]",
+				c.ID[:12], instanceID, stateInfo.State, port)
+		}
 	}
 
 	logger.Info("Loaded %d existing containers for runtime: %s", loadedCount, b.runtimeName)

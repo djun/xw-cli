@@ -115,8 +115,6 @@ func runRun(opts *RunOptions) error {
 		alias = opts.Model
 	}
 
-	fmt.Printf("Checking instance: %s\n", alias)
-
 	// Step 1: Check if instance exists
 	instances, err := client.ListInstances(false) // Only show running instances
 	if err != nil {
@@ -124,6 +122,7 @@ func runRun(opts *RunOptions) error {
 	}
 
 	var instanceExists bool
+	var instanceReady bool
 	var instancePort int
 	for _, inst := range instances {
 		instMap, ok := inst.(map[string]interface{})
@@ -138,7 +137,14 @@ func runRun(opts *RunOptions) error {
 				instancePort = int(port)
 			}
 			state, _ := instMap["state"].(string)
-			fmt.Printf("Found existing instance: %s (state: %s)\n", alias, state)
+			
+			// Check if instance is already ready
+			if state == "ready" {
+				instanceReady = true
+				fmt.Printf("Found existing instance: %s (state: %s)\n\n", alias, state)
+			} else {
+				fmt.Printf("Found existing instance: %s (state: %s)\n", alias, state)
+			}
 			break
 		}
 	}
@@ -188,28 +194,65 @@ func runRun(opts *RunOptions) error {
 	}
 
 	// Step 3: Wait for instance to be ready (no timeout, until Ctrl+C)
-	fmt.Printf("Waiting for instance to be ready... (Press Ctrl+C to cancel)\n")
-	
-	checkCount := 0
-	for {
-		ready, err := client.CheckInstanceReady(alias)
-		if err != nil {
-			// Just log the error and continue checking
+	if !instanceReady {
+		// Need to wait for instance to become ready
+		fmt.Printf("Waiting for instance to be ready... (Press Ctrl+C to cancel)\n")
+		
+		checkCount := 0
+		for {
+			// First check if instance is in error state
+			instances, err := client.ListInstances(false)
+			if err == nil {
+				for _, inst := range instances {
+					instMap, ok := inst.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					
+					instAlias, _ := instMap["alias"].(string)
+					if instAlias == alias {
+						state, _ := instMap["state"].(string)
+						if state == "error" {
+							// Instance is in error state, print error and exit
+							fmt.Printf("\r\033[K")  // Clear current line
+							fmt.Println()
+							fmt.Printf("✗ Instance failed to start (state: error)\n")
+							
+							// Try to get error message if available
+							if errMsg, ok := instMap["error"].(string); ok && errMsg != "" {
+								fmt.Printf("  Error: %s\n", errMsg)
+							}
+							fmt.Println()
+							fmt.Println("Use 'xw ps -a' to view instance details")
+							fmt.Println("Use 'xw stop' to remove the failed instance")
+							
+							return fmt.Errorf("instance failed to start")
+						}
+						break
+					}
+				}
+			}
+			
+			// Then check if endpoint is ready
+			ready, err := client.CheckInstanceReady(alias)
+			if err != nil {
+				// Just log the error and continue checking
+				checkCount++
+				fmt.Printf("\rChecking... (%d checks, last error: %v)", checkCount, err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
+			if ready {
+				fmt.Printf("\rInstance is ready!                                              \n\n")
+				break
+			}
+
+			// Show progress indicator
 			checkCount++
-			fmt.Printf("\rChecking... (%d checks, last error: %v)", checkCount, err)
+			fmt.Printf("\rWaiting for instance to be ready... (%d checks)", checkCount)
 			time.Sleep(5 * time.Second)
-			continue
 		}
-
-		if ready {
-			fmt.Printf("\rInstance is ready!                                              \n\n")
-			break
-		}
-
-		// Show progress indicator
-		checkCount++
-		fmt.Printf("\rWaiting for instance to be ready... (%d checks)", checkCount)
-		time.Sleep(5 * time.Second)
 	}
 
 	// Build endpoint from port

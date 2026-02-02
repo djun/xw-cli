@@ -1,10 +1,13 @@
 package app
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/tsingmao/xw/internal/api"
 )
 
 // PullOptions holds options for the pull command
@@ -71,6 +74,63 @@ This command must be run before a model can be used with 'xw run'.`,
 //   - error if the request fails or the model doesn't exist
 func runPull(opts *PullOptions) error {
 	client := getClient(opts.GlobalOptions)
+
+	// Check if model is supported by current device before pulling
+	modelsResp, err := client.ListModelsWithStats(api.DeviceTypeAll, true)
+	if err != nil {
+		// If we can't get model list, just continue (backward compatibility)
+		fmt.Printf("Warning: Unable to verify model compatibility: %v\n", err)
+	} else {
+		// Find the model in the list
+		var modelFound bool
+		var modelSupported bool
+		for _, model := range modelsResp.Models {
+			if model.Name == opts.Model {
+				modelFound = true
+				// Check if model is supported by detected devices
+				modelSupported = isModelSupported(model, modelsResp.DetectedDevices)
+				break
+			}
+		}
+		
+		// If model found and not supported, show warning and ask for confirmation
+		if modelFound && !modelSupported {
+			fmt.Println()
+			fmt.Println("┌─────────────────────────────────────────────────────────────────┐")
+			fmt.Println("│                        ⚠️  WARNING                              │")
+			fmt.Println("└─────────────────────────────────────────────────────────────────┘")
+			fmt.Println()
+			fmt.Printf("  Model '%s' is NOT supported by your current AI accelerator.\n", opts.Model)
+			fmt.Println()
+			fmt.Println("  This model may:")
+			fmt.Println("    • Fail to start or run")
+			fmt.Println("    • Experience compatibility issues")
+			fmt.Println("    • Require unsupported features or operations")
+			fmt.Println()
+			fmt.Println("  It is recommended to use models compatible with your hardware.")
+			fmt.Println()
+			fmt.Print("  Do you want to proceed anyway? (y/N): ")
+			
+			// Read user input
+			reader := bufio.NewReader(os.Stdin)
+			response, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("failed to read user input: %w", err)
+			}
+			
+			// Trim whitespace and convert to lowercase
+			response = strings.TrimSpace(strings.ToLower(response))
+			
+			// Only proceed if user explicitly types 'y' or 'yes'
+			if response != "y" && response != "yes" {
+				fmt.Println()
+				fmt.Println("Pull operation cancelled.")
+				return nil
+			}
+			
+			fmt.Println()
+		}
+	}
 
 	fmt.Printf("Pulling %s...\n", opts.Model)
 
