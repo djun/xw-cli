@@ -44,6 +44,7 @@ type Runtime struct {
 // sandboxRegistry holds all registered sandbox implementations for vLLM
 var sandboxRegistry = []func() runtime.DeviceSandbox{
 	func() runtime.DeviceSandbox { return NewAscendSandbox() },
+	func() runtime.DeviceSandbox { return NewMetaXSandbox() },
 	// Add more sandbox constructors here as new chips are supported
 }
 
@@ -199,6 +200,15 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		logger.Debug("Set WORLD_SIZE=%d", params.WorldSize)
 	}
 	
+	// MODEL_NAME: Model name used for inference requests
+	// Use instance alias if set, otherwise use model ID
+	modelName := params.Alias
+	if modelName == "" {
+		modelName = params.ModelID
+	}
+	env["MODEL_NAME"] = modelName
+	logger.Debug("Set MODEL_NAME=%s", modelName)
+	
 	// Convert environment map to Docker format (KEY=VALUE strings)
 	envList := make([]string, 0, len(env))
 	for k, v := range env {
@@ -246,28 +256,6 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		return nil, fmt.Errorf("failed to ensure Docker image: %w", err)
 	}
 	
-	// Determine vLLM command to execute
-	// Priority: params.ExtraConfig["command"] > default vLLM serve command
-	var cmd []string
-	if cmdInterface, ok := params.ExtraConfig["command"]; ok {
-		if cmdSlice, ok := cmdInterface.([]string); ok {
-			cmd = cmdSlice
-		}
-	}
-	
-	// Use default vLLM command if not provided
-	if cmd == nil {
-		// Use instance ID (set to alias in manager) as the served model name
-		// This allows clients to reference the model by its alias in inference requests
-		cmd = []string{
-			"vllm",
-			"serve",
-			"/mnt/model",
-			"--served-model-name",
-			params.InstanceID,
-		}
-	}
-	
 	// Prepare device indices string for container labels
 	deviceIndicesStr := ""
 	if len(params.Devices) > 0 {
@@ -291,10 +279,10 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 	}
 	
 	// Build container configuration
+	// Cmd is not set - use the default CMD from Docker image
 	containerConfig := &container.Config{
 		Image:        imageName,
 		Env:          envList,
-		Cmd:          cmd,
 		ExposedPorts: exposedPorts,
 		Tty:          false,
 		OpenStdin:    true,  // Enable interactive mode for debugging
