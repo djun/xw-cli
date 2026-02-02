@@ -68,3 +68,15 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
+// GetBaseURL returns the server's base URL.
+//
+// This returns the complete base URL of the xw server that the client
+// is configured to communicate with. The URL can be used directly for
+// API requests through the server's proxy.
+//
+// Returns:
+//   - The base URL string (e.g., "http://localhost:11581", "http://192.168.1.100:11581")
+func (c *Client) GetBaseURL() string {
+	return c.baseURL
+}
+

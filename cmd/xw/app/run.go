@@ -195,13 +195,29 @@ func runRun(opts *RunOptions) error {
 
 	// Step 3: Wait for instance to be ready (no timeout, until Ctrl+C)
 	if !instanceReady {
-		// Need to wait for instance to become ready
-		fmt.Printf("Waiting for instance to be ready... (Press Ctrl+C to cancel)\n")
+		// Loading spinner characters
+		spinners := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		spinnerIdx := 0
+		startTime := time.Now()
+		lastCheck := time.Now()
+		checkInterval := 5 * time.Second
+		spinnerInterval := 100 * time.Millisecond
 		
-		checkCount := 0
-		for {
-			// First check if instance is in error state
+		// Channel for check results
+		type checkResult struct {
+			ready      bool
+			err        error
+			errorState bool
+			errorMsg   string
+		}
+		resultCh := make(chan checkResult, 1)
+		
+		// Function to perform health check
+		performCheck := func() {
+			// First check instance state
 			instances, err := client.ListInstances(false)
+			result := checkResult{}
+			
 			if err == nil {
 				for _, inst := range instances {
 					instMap, ok := inst.(map[string]interface{})
@@ -213,50 +229,86 @@ func runRun(opts *RunOptions) error {
 					if instAlias == alias {
 						state, _ := instMap["state"].(string)
 						if state == "error" {
-							// Instance is in error state, print error and exit
-							fmt.Printf("\r\033[K")  // Clear current line
-							fmt.Println()
-							fmt.Printf("✗ Instance failed to start (state: error)\n")
-							
-							// Try to get error message if available
-							if errMsg, ok := instMap["error"].(string); ok && errMsg != "" {
-								fmt.Printf("  Error: %s\n", errMsg)
+							result.errorState = true
+							if errMsg, ok := instMap["error"].(string); ok {
+								result.errorMsg = errMsg
 							}
-							fmt.Println()
-							fmt.Println("Use 'xw ps -a' to view instance details")
-							fmt.Println("Use 'xw stop' to remove the failed instance")
-							
-							return fmt.Errorf("instance failed to start")
+						} else if state == "ready" {
+							// Instance is already in ready state
+							result.ready = true
 						}
 						break
 					}
 				}
 			}
 			
-			// Then check if endpoint is ready
-			ready, err := client.CheckInstanceReady(alias)
-			if err != nil {
-				// Just log the error and continue checking
-				checkCount++
-				fmt.Printf("\rChecking... (%d checks, last error: %v)", checkCount, err)
-				time.Sleep(5 * time.Second)
-				continue
+			if !result.errorState && !result.ready {
+				// State is not error and not ready, check endpoint accessibility
+				ready, err := client.CheckInstanceReady(alias)
+				result.ready = ready
+				result.err = err
 			}
-
-			if ready {
-				fmt.Printf("\rInstance is ready!                                              \n\n")
-				break
+			
+			resultCh <- result
+		}
+		
+		// Start first check
+		go performCheck()
+		
+		for {
+			select {
+			case result := <-resultCh:
+				// Got check result
+				if result.errorState {
+					// Instance is in error state
+					fmt.Printf("\r\033[K")  // Clear current line
+					fmt.Println()
+					fmt.Printf("✗ Instance failed to start (state: error)\n")
+					
+					if result.errorMsg != "" {
+						fmt.Printf("  Error: %s\n", result.errorMsg)
+					}
+					fmt.Println()
+					fmt.Println("Use 'xw ps -a' to view instance details")
+					fmt.Println("Use 'xw stop' to remove the failed instance")
+					
+					return fmt.Errorf("instance failed to start")
+				}
+				
+				if result.ready {
+					// Instance is ready!
+					fmt.Printf("\r\033[K")  // Clear current line
+					fmt.Printf("✓ Instance is ready!\n\n")
+					goto readyComplete  // Exit immediately without updating spinner
+				}
+				
+				// Not ready yet, schedule next check after interval
+				lastCheck = time.Now()
+				go func() {
+					time.Sleep(checkInterval)
+					performCheck()
+				}()
+				
+			case <-time.After(spinnerInterval):
+				// Just update spinner animation
 			}
-
-			// Show progress indicator
-			checkCount++
-			fmt.Printf("\rWaiting for instance to be ready... (%d checks)", checkCount)
-			time.Sleep(5 * time.Second)
+			
+			// Update spinner display
+			elapsed := int(time.Since(startTime).Seconds())
+			spinner := spinners[spinnerIdx%len(spinners)]
+			spinnerIdx++
+			
+			if time.Since(lastCheck) < checkInterval {
+				fmt.Printf("\r%s Waiting for instance to be ready... %ds", spinner, elapsed)
+			} else {
+				fmt.Printf("\r%s Waiting for instance to be ready... %ds (checking)", spinner, elapsed)
+			}
 		}
 	}
 
-	// Build endpoint from port
-	instanceEndpoint := fmt.Sprintf("http://localhost:%d", instancePort)
+readyComplete:
+	// Use server's base URL - server has API proxy to forward requests to instances
+	instanceEndpoint := client.GetBaseURL()
 
 	// Step 4: Start interactive chat
 	fmt.Println("=" + strings.Repeat("=", 60))

@@ -62,7 +62,17 @@ Examples:
   
   # Shorter version with -f
   xw logs my-model -f`,
-		Args: cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				// Show help when no arguments provided
+				cmd.Help()
+				os.Exit(0)
+			}
+			if len(args) != 1 {
+				return fmt.Errorf("accepts 1 arg, received %d", len(args))
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Alias = args[0]
 			return runLogs(opts)
