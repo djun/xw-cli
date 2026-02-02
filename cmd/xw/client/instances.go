@@ -8,6 +8,7 @@ package client
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,13 +46,29 @@ func (c *Client) RunModel(opts interface{}) (map[string]interface{}, error) {
 // Returns:
 //   - error if the request fails
 func (c *Client) RunModelWithSSE(opts interface{}, progressCallback func(string)) (map[string]interface{}, error) {
+	return c.RunModelWithSSEContext(context.Background(), opts, progressCallback)
+}
+
+// RunModelWithSSEContext starts a model instance with SSE streaming and context support.
+//
+// This method sends a request to start a model with real-time progress via SSE,
+// and supports cancellation via context.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - opts: Runtime options for the model
+//   - progressCallback: Function called for each progress event
+//
+// Returns:
+//   - error if the request fails
+func (c *Client) RunModelWithSSEContext(ctx context.Context, opts interface{}, progressCallback func(string)) (map[string]interface{}, error) {
 	data, err := json.Marshal(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	url := c.baseURL + "/api/runtime/start"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -61,6 +78,10 @@ func (c *Client) RunModelWithSSE(opts interface{}, progressCallback func(string)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		// Check if error is due to context cancellation
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("operation cancelled")
+		}
 		return nil, fmt.Errorf("cannot connect to xw server at %s\n\nIs the server running? Start it with: xw serve", c.baseURL)
 	}
 	defer resp.Body.Close()
@@ -75,6 +96,13 @@ func (c *Client) RunModelWithSSE(opts interface{}, progressCallback func(string)
 	// Read SSE stream
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("operation cancelled")
+		default:
+		}
+		
 		line := scanner.Text()
 
 		if strings.HasPrefix(line, "data: ") {
@@ -115,6 +143,9 @@ func (c *Client) RunModelWithSSE(opts interface{}, progressCallback func(string)
 	}
 
 	if err := scanner.Err(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("operation cancelled")
+		}
 		return nil, fmt.Errorf("error reading stream: %w", err)
 	}
 

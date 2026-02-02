@@ -1,9 +1,11 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -194,12 +196,30 @@ func runStart(opts *StartOptions) error {
 	}
 	fmt.Println()
 
+	// Setup context and signal handler for Ctrl+C during startup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	// Handle Ctrl+C in background
+	go func() {
+		<-sigChan
+		fmt.Println("\n\nReceived interrupt signal. Cancelling operation...")
+		cancel()
+	}()
+
 	// Start the model instance via server API with SSE streaming
 	progressDisplay := newProgressDisplay()
-	instanceInfo, err := client.RunModelWithSSE(runOpts, func(event string) {
+	instanceInfo, err := client.RunModelWithSSEContext(ctx, runOpts, func(event string) {
 		progressDisplay.update(event)
 	})
 	progressDisplay.finish()
+	
+	// Stop signal handler
+	signal.Stop(sigChan)
+	close(sigChan)
 	
 	if err != nil {
 		// Print error directly without "Error: " prefix
@@ -239,9 +259,9 @@ func runStart(opts *StartOptions) error {
 	fmt.Printf("Streaming logs from %s (press Ctrl+C to stop and remove)...\n", instanceAlias)
 	fmt.Println()
 	
-	// Setup signal handler for Ctrl+C
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	// Setup signal handler for Ctrl+C during log streaming
+	logSigChan := make(chan os.Signal, 1)
+	signal.Notify(logSigChan, os.Interrupt, syscall.SIGTERM)
 	
 	// Start log streaming in a goroutine
 	logDone := make(chan error, 1)
@@ -256,7 +276,7 @@ func runStart(opts *StartOptions) error {
 	
 	// Wait for signal or log stream to end
 	select {
-	case <-sigChan:
+	case <-logSigChan:
 		fmt.Println()
 		fmt.Printf("\nReceived interrupt signal. Stopping and removing %s...\n", instanceAlias)
 		
@@ -287,11 +307,13 @@ func runStart(opts *StartOptions) error {
 }
 
 
-// progressDisplay handles Docker pull progress display with overwriting
+// progressDisplay handles progress display
 type progressDisplay struct {
-	layers        map[string]string // layer ID -> status line
-	lastLineCount int               // number of lines in last display
-	isPulling     bool              // whether we're in pull mode
+	isPulling       bool
+	progressShown   bool
+	dockerFirstLine bool              // Track if this is the first Docker output line
+	layers          map[string]string // Layer ID -> current status line
+	lastLineCount   int               // Number of lines last rendered
 }
 
 // newProgressDisplay creates a new progress display
@@ -303,84 +325,142 @@ func newProgressDisplay() *progressDisplay {
 
 // update processes and displays an event
 func (pd *progressDisplay) update(event string) {
-	// DEBUG: Print raw event (can be removed later)
-	// fmt.Printf("[DEBUG] event: %q\n", event)
-	
-	// Check if this is Docker pull output
-	if strings.Contains(event, "Pulling from") {
+	// Handle Docker output with \r (carriage return - layer update)
+	if strings.HasPrefix(event, "DOCKER_CR|") {
 		pd.isPulling = true
-		fmt.Printf("\n%s\n\n", event)
+		line := strings.TrimPrefix(event, "DOCKER_CR|")
+		pd.updateLayer(line)
+		pd.renderLayers()
 		return
 	}
 	
-	if strings.Contains(event, "Pulling Docker image:") || 
-	   strings.Contains(event, "Successfully pulled") ||
-	   strings.Contains(event, "Docker pull cancelled") {
-		pd.isPulling = false
+	// Handle Docker output with \n (line feed - new line)
+	if strings.HasPrefix(event, "DOCKER_LF|") {
+		pd.isPulling = true
+		line := strings.TrimPrefix(event, "DOCKER_LF|")
+		pd.dockerFirstLine = false
+		
+		// Check if it's a layer status line
+		if strings.Contains(line, ":") && pd.isLayerLine(line) {
+			pd.updateLayer(line)
+			pd.renderLayers()
+		} else if !pd.shouldSkipLine(line) {
+			// Non-layer line that we want to show
+			fmt.Println(line)
+		}
+		os.Stdout.Sync()
+		return
+	}
+	
+	// Detect start of Docker pull
+	if strings.Contains(event, "Pulling Docker image:") {
+		pd.isPulling = true
+		pd.progressShown = false
+		pd.dockerFirstLine = true
+		pd.layers = make(map[string]string)
+		pd.lastLineCount = 0
 		fmt.Printf("\n▸ %s\n", event)
 		return
 	}
 	
-	// Non-pull events - just print normally
-	if !pd.isPulling {
+	// Detect end of Docker pull
+	if strings.Contains(event, "Successfully pulled") ||
+	   strings.Contains(event, "Docker pull cancelled") {
+		// Clear layer rendering
+		if pd.lastLineCount > 0 {
+			fmt.Println() // Move past the progress lines
+		}
+		pd.isPulling = false
+		pd.dockerFirstLine = false
+		pd.layers = make(map[string]string)
+		pd.lastLineCount = 0
 		fmt.Printf("▸ %s\n", event)
 		return
 	}
 	
-	// Parse Docker pull progress line
-	// Format: "layer_id: Status [Progress] size"
-	parts := strings.SplitN(event, ":", 2)
-	if len(parts) != 2 {
-		// Not a layer progress line, print normally
-		fmt.Printf("%s\n", event)
+	// Skip other messages during pull
+	if pd.isPulling {
 		return
 	}
 	
-	layerID := strings.TrimSpace(parts[0])
-	status := strings.TrimSpace(parts[1])
-	
-	// Filter out empty status
-	if status == "" {
-		return
-	}
-	
-	// Update layer status
-	pd.layers[layerID] = status
-	
-	// Clear previous lines
-	pd.clearLines()
-	
-	// Display all layers (sorted for stability)
-	pd.lastLineCount = 0
-	
-	// Get sorted layer IDs
-	layerIDs := make([]string, 0, len(pd.layers))
-	for id := range pd.layers {
-		layerIDs = append(layerIDs, id)
-	}
-	
-	// Display in order
-	for _, id := range layerIDs {
-		st := pd.layers[id]
-		fmt.Printf("%s: %s\n", id, st)
-		pd.lastLineCount++
-	}
+	// Non-pull events - print with bullet point
+	fmt.Printf("▸ %s\n", event)
 }
 
-// clearLines clears the previous output lines
-func (pd *progressDisplay) clearLines() {
-	if pd.lastLineCount > 0 {
-		// Move cursor up and clear each line
-		for i := 0; i < pd.lastLineCount; i++ {
-			fmt.Print("\033[A\033[2K") // Move up and clear line
+// isLayerLine checks if a line is a layer status line (layerID: status)
+func (pd *progressDisplay) isLayerLine(line string) bool {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	layerID := strings.TrimSpace(parts[0])
+	// Layer IDs are typically 12-character hex strings
+	return len(layerID) >= 8 && len(layerID) <= 12
+}
+
+// shouldSkipLine checks if a Docker output line should be skipped
+func (pd *progressDisplay) shouldSkipLine(line string) bool {
+	line = strings.TrimSpace(line)
+	
+	// Skip empty lines
+	if line == "" {
+		return true
+	}
+	
+	// Skip "Pulling from" lines (redundant with our message)
+	if strings.Contains(line, "Pulling from") {
+		return true
+	}
+	
+	return false
+}
+
+// updateLayer parses and updates a layer's status
+func (pd *progressDisplay) updateLayer(line string) {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) == 2 {
+		layerID := strings.TrimSpace(parts[0])
+		if len(layerID) >= 8 && len(layerID) <= 12 {
+			// Store the full line
+			pd.layers[layerID] = line
 		}
 	}
 }
 
+// renderLayers clears previous output and renders all active layers
+func (pd *progressDisplay) renderLayers() {
+	if len(pd.layers) == 0 {
+		return
+	}
+	
+	// Move cursor up to start of progress area
+	if pd.lastLineCount > 0 {
+		fmt.Printf("\033[%dA", pd.lastLineCount)
+	}
+	
+	// Clear and render each layer
+	lines := make([]string, 0, len(pd.layers))
+	for _, line := range pd.layers {
+		lines = append(lines, line)
+	}
+	
+	// Sort for consistent display
+	sort.Strings(lines)
+	
+	for _, line := range lines {
+		// Clear line and print
+		fmt.Print("\r\033[K")
+		fmt.Println(line)
+	}
+	
+	pd.lastLineCount = len(lines)
+	os.Stdout.Sync()
+}
+
 // finish completes the display
 func (pd *progressDisplay) finish() {
-	// Ensure we're on a new line
-	if pd.isPulling && len(pd.layers) > 0 {
-		fmt.Println()
+	// Clear progress line if shown
+	if pd.progressShown {
+		fmt.Print("\r\033[K")
 	}
 }

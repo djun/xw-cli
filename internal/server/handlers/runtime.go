@@ -248,6 +248,7 @@ func (h *Handler) runModelAsync(ctx context.Context, reqBody *struct {
 		Port:             port,
 		Interactive:      reqBody.Interactive,
 		AdditionalConfig: additionalConfig,
+		EventChannel:     eventCh, // Pass event channel for progress updates
 	}
 	
 	logger.Debug("RunOptions: BackendType=%s, DeploymentMode=%s", opts.BackendType, opts.DeploymentMode)
