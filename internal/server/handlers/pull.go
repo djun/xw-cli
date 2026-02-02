@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tsingmao/xw/internal/api"
 	"github.com/tsingmao/xw/internal/device"
@@ -161,6 +162,17 @@ func (h *Handler) PullModel(w http.ResponseWriter, r *http.Request) {
 	if err := h.adjustModelConfigForChip(modelPath); err != nil {
 		logger.Warn("Failed to adjust model config for chip: %v", err)
 		// Don't fail the whole operation, just log the warning
+	}
+
+	// Create .downloaded marker file to indicate successful download
+	// This file is checked by ListDownloadedModels to filter incomplete downloads
+	markerPath := filepath.Join(modelPath, ".downloaded")
+	markerContent := fmt.Sprintf("Downloaded at: %s\n", time.Now().Format(time.RFC3339))
+	if err := os.WriteFile(markerPath, []byte(markerContent), 0644); err != nil {
+		logger.Warn("Failed to create .downloaded marker file: %v", err)
+		// Don't fail the whole operation, just log the warning
+	} else {
+		logger.Debug("Created download marker file: %s", markerPath)
 	}
 
 	// Send final success message with model path
