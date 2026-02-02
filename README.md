@@ -1,140 +1,84 @@
-# XW - AI Inference Platform for Domestic Chips
+![](/xuanwu.png)
+<center> <b>玄武CLI</b>｜<b>xw-cli</b> </center>
 
-XW is a high-performance AI inference platform optimized for domestic accelerators, providing unified access to large language models across different hardware backends.
+<center> 实现国产算力的大模型自由，打造国产版Ollama </center>
 
-## Overview
+为多元国产算力平台深度优化模型性能。告别繁琐的环境配置与算子适配，一条命令启动生产级服务，即刻释放大模型潜能。
 
-XW simplifies LLM deployment and inference on domestic chips by providing:
+## 里程碑
 
-- **Unified Interface**: Single CLI and API for model management across different hardware
-- **Multiple Backends**: Support for vLLM and MindIE inference engines
-- **Hardware Optimization**: Native support for Ascend NPU with automatic device allocation
-- **Docker Integration**: Containerized deployment with proper device isolation and resource management
-- **Model Registry**: Built-in catalog of popular models (Qwen series, etc.)
-- **Production Ready**: Systemd service, health checks, and comprehensive logging
+- **2026.02.02** 玄武CLI正式开源，并支持华为Ascend系列芯片。
 
-## Supported Hardware
+## ✨ 特性
 
-- **Ascend NPU** (Huawei) - 910B, 800I-A2, and other models
-- More accelerators coming soon
+### 🇨🇳 国产原生
+- 深度优化国产硬件性能
+- 本地化完整支持
 
-## Supported Inference Engines
+### ⚡ 低门槛，一键启动
+- 无需复杂配置，开箱即用
+- 自动硬件检测与引擎推荐
 
-- **vLLM** - High-throughput serving with PagedAttention
-- **MindIE** - Huawei's optimized inference engine for Ascend NPUs
+### 🔧 多引擎支持
+- 内置多个推理引擎适配与自动路由
+- 保证性能与模型覆盖广度
 
-## Quick Start
+## 📦 安装
 
-### Installation
+### 前置要求
+- 拥有linux系统
+- 拥有受[支持的国产卡]()，并确认驱动已正确安装
+
+### 极速安装
 
 ```bash
-# Download and extract
-tar -xzf xw-1.0.0-amd64.tar.gz
-cd xw-1.0.0-amd64
-
-# Install
-sudo bash scripts/install.sh
-
-# Start server
-sudo systemctl start xw-server
-sudo systemctl enable xw-server
+curl -o- http://xw.tsingmao.com/install.sh | bash
 ```
 
-### Basic Usage
+## 🚀 快速开始
+
+### 1. 启动xw-cli server
 
 ```bash
-# Check detected hardware
-xw device list
+xw serve
+```
 
-# List downloaded models
+### 2. 拉取模型
+
+```bash
+xw pull qwen3-8b
+```
+
+更多模型详见 [xw 模型仓库](xw.tsingmao.com/models)。
+
+### 3. 运行模型
+
+```bash
+xw run qwen3-8b
+```
+
+开始对话，输入 `/quit` 退出。
+
+### 4. 查看本地模型
+
+```bash
+# 本地存储的模型
 xw ls
 
-# Run a model (starts instance and enters interactive chat)
-xw run qwen2-7b
-
-# Check running instances
+# 正在运行的模型
 xw ps
-
-# Stop an instance
-xw stop qwen2-7b
-
-# View logs
-xw logs qwen2-7b
 ```
 
-### API Usage
+## 📚 文档
 
-XW server provides OpenAI-compatible API on port 11581:
+- **官网**: [xw.tsingmao.com](xw.tsingmao.com)
+- **文档**: [xw.tsingmao.com/doc](xw.tsingmao.com/doc)
+- **模型仓库**: [xw.tsingmao.com/models](xw.tsingmao.com/models)
 
-```bash
-# Health check
-curl http://localhost:11581/api/health
+## 🐛 反馈
 
-# Chat completion (OpenAI compatible)
-curl http://localhost:11581/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "qwen2-7b",
-    "messages": [{"role": "user", "content": "Hello"}],
-    "stream": false
-  }'
-```
+如遇到问题或有建议，欢迎 [提交 Issue](https://github.com/TsingmaoAI/xw-cli/issues)
 
-## Architecture
+---
 
-XW uses a modular architecture with clear separation of concerns:
-
-- **CLI Client**: Communicates with server via REST API (default: `http://localhost:11581`)
-- **Server**: Manages model lifecycle, device allocation, and inference routing
-- **Runtime Manager**: Orchestrates different inference backends (vLLM, MindIE)
-- **Device Manager**: Automatic hardware detection and NPU allocation
-- **Docker Backend**: Isolated containers with dedicated device access
-
-Each model instance runs in a dedicated Docker container with:
-- Exclusive NPU allocation (no sharing between instances)
-- Automatic port management and health monitoring
-- Full isolation for security and resource management
-- Persistent logging for debugging and profiling
-
-## Building from Source
-
-```bash
-# Build binary
-make build
-
-# Run tests
-make test
-
-# Build release packages for distribution
-make package
-```
-
-## Configuration
-
-XW server can be configured via command-line flags:
-
-```bash
-# Custom port and host
-xw serve --host 0.0.0.0 --port 8080
-
-# Verbose logging
-xw serve -v
-```
-
-Environment variables:
-- `XW_SERVER`: Server URL for CLI client (default: `http://localhost:11581`)
-- `XW_HOME`: Data directory (default: `/opt/xw`)
-- `XW_LOG_LEVEL`: Log level (default: `info`)
-
-## License
-
-Apache License 2.0
-
-## Documentation
-
-For more information, run:
-
-```bash
-xw --help
-xw <command> --help
-```
+本项目由清昴智能团队维护。更多信息访问 [清昴智能官网](www.tsingmao.com)
