@@ -322,25 +322,14 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 
 	logger.Info("Using MLGuider Docker image: %s", imageName)
 
-	// Prepare container labels for discovery and filtering
-	// These labels enable instance tracking and multi-server support
-	labels := map[string]string{
-		"xw.runtime":          "mlguider-docker",
-		"xw.instance_id":      params.InstanceID,
-		"xw.model_id":         params.ModelID,
-		"xw.alias":            params.Alias,
-		"xw.backend_type":     params.BackendType,
-		"xw.deployment_mode":  params.DeploymentMode,
-		"xw.server_name":      params.ServerName,
-	}
-
-	// Add device indices to labels for debugging and monitoring
+	// Prepare device indices label for MLGuider
+	var deviceIndicesStr string
 	if len(params.Devices) > 0 {
 		deviceIndices := make([]string, len(params.Devices))
 		for i, dev := range params.Devices {
 			deviceIndices[i] = fmt.Sprintf("%d", dev.Index)
 		}
-		labels["xw.device_indices"] = strings.Join(deviceIndices, ",")
+		deviceIndicesStr = strings.Join(deviceIndices, ",")
 	}
 
 	// Get device mounts for direct hardware access
@@ -410,7 +399,6 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		Env:          envList,
 		Cmd:          nil, // Use image default entrypoint
 		ExposedPorts: exposedPorts,
-		Labels:       labels,
 		Tty:          false,
 		OpenStdin:    true,  // Enable interactive mode for debugging
 		AttachStdin:  true,  // Attach stdin for interactive shells
@@ -453,17 +441,15 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		},
 	}
 
-	// Create the Docker container
+	// Prepare MLGuider-specific labels
+	extraLabels := map[string]string{}
+	if deviceIndicesStr != "" {
+		extraLabels["xw.device_indices"] = deviceIndicesStr
+	}
+	
+	// Create the Docker container via base method (automatically adds common labels)
 	logger.Debug("Creating MLGuider container: %s", containerName)
-	cli := r.GetDockerClient()
-	resp, err := cli.ContainerCreate(
-		ctx,
-		containerConfig,
-		hostConfig,
-		nil, // Network config (not used with host networking)
-		nil, // Platform config
-		containerName,
-	)
+	resp, err := r.CreateContainerWithLabels(ctx, params, containerConfig, hostConfig, containerName, extraLabels)
 	if err != nil {
 		return nil, err
 	}

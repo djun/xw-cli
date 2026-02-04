@@ -19,6 +19,75 @@ import (
 	"github.com/tsingmaoai/xw-cli/internal/logger"
 )
 
+// CreateContainerWithLabels creates a Docker container with automatic common label injection.
+//
+// This method wraps Docker's ContainerCreate API and automatically adds common xw labels
+// to ensure all containers can be discovered and managed consistently.
+//
+// Common labels added automatically:
+//   - xw.runtime: Runtime type (e.g., "vllm-docker", "mindie-docker")
+//   - xw.model_id: Model identifier
+//   - xw.alias: Instance alias for inference
+//   - xw.instance_id: Unique instance identifier
+//   - xw.backend_type: Backend type (e.g., "vllm", "mindie")
+//   - xw.deployment_mode: Deployment mode (e.g., "docker")
+//   - xw.server_name: Server identifier for multi-server support
+//   - xw.max_concurrent: Max concurrent requests (if specified in ExtraConfig)
+//
+// Runtime-specific labels can be passed via the extraLabels parameter.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - params: Creation parameters containing model info and configuration
+//   - containerConfig: Docker container configuration
+//   - hostConfig: Docker host configuration
+//   - containerName: Name for the container
+//   - extraLabels: Additional runtime-specific labels (optional)
+//
+// Returns:
+//   - Container creation response with ID
+//   - Error if container creation fails
+func (b *DockerRuntimeBase) CreateContainerWithLabels(
+	ctx context.Context,
+	params *CreateParams,
+	containerConfig *container.Config,
+	hostConfig *container.HostConfig,
+	containerName string,
+	extraLabels map[string]string,
+) (container.CreateResponse, error) {
+	// Prepare common labels
+	commonLabels := map[string]string{
+		"xw.runtime":         b.runtimeName,
+		"xw.model_id":        params.ModelID,
+		"xw.alias":           params.Alias,
+		"xw.instance_id":     params.InstanceID,
+		"xw.backend_type":    params.BackendType,
+		"xw.deployment_mode": params.DeploymentMode,
+		"xw.server_name":     params.ServerName,
+	}
+	
+	// Add max_concurrent label if specified (used by proxy for concurrency control)
+	if maxConcurrent, ok := params.ExtraConfig["max_concurrent"].(int); ok && maxConcurrent > 0 {
+		commonLabels["xw.max_concurrent"] = fmt.Sprintf("%d", maxConcurrent)
+	}
+	
+	// Merge common labels with extra labels (extra labels can override if needed)
+	if containerConfig.Labels == nil {
+		containerConfig.Labels = make(map[string]string)
+	}
+	
+	for k, v := range commonLabels {
+		containerConfig.Labels[k] = v
+	}
+	
+	for k, v := range extraLabels {
+		containerConfig.Labels[k] = v
+	}
+	
+	// Create container via Docker API
+	return b.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
+}
+
 // DockerRuntimeBase provides common Docker operations for runtime implementations.
 //
 // This base implementation handles the shared Docker infrastructure used by
@@ -370,16 +439,92 @@ func (b *DockerRuntimeBase) updateInstanceStateFromContainer(ctx context.Context
 //
 // Thread Safety: Safe for concurrent calls
 func (b *DockerRuntimeBase) List(ctx context.Context) ([]*Instance, error) {
-	b.mu.RLock()
-	instancesList := make([]*Instance, 0, len(b.instances))
-	for _, inst := range b.instances {
-		instancesList = append(instancesList, inst)
+	// Query Docker directly for all containers with our runtime label
+	// This ensures we always return the latest state without relying on memory cache
+	containers, err := b.client.ContainerList(ctx, container.ListOptions{
+		All: true, // Include stopped containers
+		Filters: filters.NewArgs(
+			filters.Arg("label", fmt.Sprintf("xw.runtime=%s", b.runtimeName)),
+		),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
-	b.mu.RUnlock()
 
-	// Check actual container status for each instance
-	for _, inst := range instancesList {
-		b.updateInstanceStateFromContainer(ctx, inst)
+	instancesList := make([]*Instance, 0, len(containers))
+	
+	for _, c := range containers {
+		instanceID := c.Labels["xw.instance_id"]
+		if instanceID == "" {
+			continue
+		}
+
+		// Filter by server name if configured (for multi-server support)
+		if b.serverName != "" {
+			containerServerName := c.Labels["xw.server_name"]
+			if containerServerName != b.serverName {
+				continue
+			}
+		}
+
+		// Inspect container to get detailed state
+		stateInfo, err := InspectContainerState(ctx, b.client, c.ID)
+		if err != nil {
+			logger.Debug("Failed to inspect container %s during list: %v", c.ID[:12], err)
+			stateInfo = &ContainerStateInfo{
+				State:        StateUnknown,
+				ErrorMessage: fmt.Sprintf("Failed to inspect: %v", err),
+			}
+		}
+
+		// Extract port mapping
+		port := 0
+		for _, portMapping := range c.Ports {
+			if portMapping.PrivatePort == 8000 {
+				port = int(portMapping.PublicPort)
+				break
+			}
+		}
+
+		// Convert timestamps
+		createdAt := time.Unix(c.Created, 0)
+		startedAt := createdAt
+		if stateInfo.IsRunning {
+			if inspectData, err := b.client.ContainerInspect(ctx, c.ID); err == nil {
+				if inspectData.State != nil && inspectData.State.StartedAt != "" {
+					if parsedTime, err := time.Parse(time.RFC3339Nano, inspectData.State.StartedAt); err == nil {
+						startedAt = parsedTime
+					}
+				}
+			}
+		}
+
+		// Build instance from container info
+		metadata := map[string]string{
+			"container_id":    c.ID,
+			"backend_type":    c.Labels["xw.backend_type"],
+			"deployment_mode": c.Labels["xw.deployment_mode"],
+		}
+		
+		// Copy max_concurrent from label if present
+		if maxConcurrent := c.Labels["xw.max_concurrent"]; maxConcurrent != "" {
+			metadata["max_concurrent"] = maxConcurrent
+		}
+
+		instance := &Instance{
+			ID:          instanceID,
+			RuntimeName: b.runtimeName,
+			ModelID:     c.Labels["xw.model_id"],
+			Alias:       c.Labels["xw.alias"],
+			State:       stateInfo.State,
+			Port:        port,
+			CreatedAt:   createdAt,
+			StartedAt:   startedAt,
+			Metadata:    metadata,
+			Error:       stateInfo.ErrorMessage,
+		}
+
+		instancesList = append(instancesList, instance)
 	}
 
 	return instancesList, nil

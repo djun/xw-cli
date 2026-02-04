@@ -302,18 +302,6 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		deviceIndicesStr = strings.Join(indices, ",")
 	}
 
-	// Prepare container labels for discovery and filtering
-	labels := map[string]string{
-		"xw.runtime":         r.Name(),
-		"xw.model_id":        params.ModelID,
-		"xw.alias":           params.Alias,
-		"xw.instance_id":     params.InstanceID,
-		"xw.backend_type":    params.BackendType,
-		"xw.deployment_mode": params.DeploymentMode,
-		"xw.device_indices":  deviceIndicesStr,
-		"xw.server_name":     params.ServerName,
-	}
-
 	// Build container configuration
 	containerConfig := &container.Config{
 		Image:        imageName,
@@ -323,7 +311,6 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		Tty:          false,
 		OpenStdin:    true,  // Enable interactive mode for debugging
 		AttachStdin:  true,  // Attach stdin for interactive shells
-		Labels:       labels,
 	}
 
 	// Get device-specific device mounts (e.g., /dev/davinci0)
@@ -397,16 +384,13 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		containerName = fmt.Sprintf("%s-%s", params.InstanceID, params.ServerName)
 	}
 
-	// Create the container via Docker API
-	cli := r.GetDockerClient()
-	resp, err := cli.ContainerCreate(
-		ctx,
-		containerConfig,
-		hostConfig,
-		nil, // Network config (use default)
-		nil, // Platform config (use default)
-		containerName,
-	)
+	// Prepare MindIE-specific labels
+	extraLabels := map[string]string{
+		"xw.device_indices": deviceIndicesStr,
+	}
+
+	// Create the container via base method (automatically adds common labels)
+	resp, err := r.CreateContainerWithLabels(ctx, params, containerConfig, hostConfig, containerName, extraLabels)
 	if err != nil {
 		return nil, err
 	}
