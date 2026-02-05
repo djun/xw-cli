@@ -98,6 +98,13 @@ type ChipModelConfig struct {
 	// Example: {"vllm": {"arm64": "quay.io/...", "amd64": "..."}}
 	// All variants of this chip model share the same runtime images
 	RuntimeImages map[string]map[string]string `yaml:"runtime_images,omitempty"`
+	
+	// ExtSandboxes defines configuration-based sandboxes for this chip model (optional)
+	// Structure: engine_name -> sandbox_config
+	// Example: {"vllm": {device_env: "XPU_VISIBLE_DEVICES", devices: [...], ...}}
+	// This enables support for niche chips without code-based sandbox implementations
+	// If defined, runtime engines will automatically register these sandboxes during initialization
+	ExtSandboxes map[string]*ExtSandboxConfig `yaml:"ext_sandboxes,omitempty"`
 }
 
 // ChipVendorConfig defines configuration for a chip vendor.

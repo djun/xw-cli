@@ -41,19 +41,13 @@ type Runtime struct {
 	*runtime.DockerRuntimeBase // Embedded base provides common Docker operations
 }
 
-// sandboxRegistry holds all registered sandbox implementations for vLLM
-var sandboxRegistry = []func() runtime.DeviceSandbox{
-	func() runtime.DeviceSandbox { return NewAscendSandbox() },
-	func() runtime.DeviceSandbox { return NewMetaXSandbox() },
-	// Add more sandbox constructors here as new chips are supported
-}
-
 // NewRuntime creates a new vLLM Docker runtime instance.
 //
 // This function:
 //   1. Initializes Docker base with "vllm-docker" runtime name
-//   2. Verifies Docker daemon connectivity
-//   3. Loads any existing containers from previous runs
+//   2. Registers core sandbox implementations
+//   3. Verifies Docker daemon connectivity
+//   4. Loads any existing containers from previous runs
 //
 // Returns:
 //   - Configured runtime instance ready for use
@@ -63,6 +57,13 @@ func NewRuntime() (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Docker base: %w", err)
 	}
+	
+	// Register core sandboxes for mainstream accelerators
+	// Extended sandboxes from configuration will be loaded automatically when needed
+	base.RegisterCoreSandboxes([]func() runtime.DeviceSandbox{
+		func() runtime.DeviceSandbox { return NewAscendSandbox() },
+		func() runtime.DeviceSandbox { return NewMetaXSandbox() },
+	})
 	
 	rt := &Runtime{
 		DockerRuntimeBase: base,
@@ -151,23 +152,13 @@ func (r *Runtime) Create(ctx context.Context, params *runtime.CreateParams) (*ru
 		return nil, fmt.Errorf("at least one device is required")
 	}
 	
-	// Select device sandbox based on device type by querying all registered sandboxes
-	var sandbox runtime.DeviceSandbox
+	// Select device sandbox using unified selection logic from base
+	// This automatically handles configuration-first priority: extended sandboxes (config) > core sandboxes (code)
 	// Use ConfigKey (base model) for sandbox selection, not Type (which may be variant_key)
 	deviceType := params.Devices[0].ConfigKey
-	
-	// Try each registered sandbox until we find one that supports this device type
-	for _, sandboxConstructor := range sandboxRegistry {
-		sb := sandboxConstructor()
-		if sb.Supports(deviceType) {
-			sandbox = sb
-			logger.Debug("Selected sandbox for device type %s: %T", deviceType, sandbox)
-			break
-		}
-	}
-	
-	if sandbox == nil {
-		return nil, fmt.Errorf("no sandbox found for device type: %s", deviceType)
+	sandbox, err := r.SelectSandbox(deviceType)
+	if err != nil {
+		return nil, err
 	}
 	
 	// Prepare sandbox-specific environment variables

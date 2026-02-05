@@ -141,4 +141,44 @@ vendors:
 #   - boxes: List of chip groups, each box contains chips with high-speed interconnect
 #   - devices: Logical chip indices (as shown in 'xw device list')
 #   - Distance calculation: same box = 0, different boxes = |box_index_a - box_index_b|
+# - ext_sandboxes: Extended sandbox configurations for additional chips (optional)
+#   - Enables support for niche accelerators without code changes
+#   - Structure: engine_name -> sandbox_config
+#   - device_env: Environment variable for device visibility (set to comma-separated indices)
+#   - devices: Device node paths (paths ending with digit are per-device, others are shared)
+#   - volumes: Host:container volume mounts
+#   - privileged: Whether container requires privileged mode
+#   - runtime: Docker runtime (default: runc)
+#   - shm_size_gb: Shared memory size in GB (default: 16)
+#   - capabilities: Linux capabilities required
+#
+# Example ext_sandboxes configuration (uncomment and customize for your hardware):
+#
+#  - vendor_name: Baidu
+#    vendor_id: "0x1d22"
+#    chip_models:
+#      - config_key: kunlun-r200
+#        model_name: Kunlun XPU R200
+#        device_id: "0x3684"
+#        ext_sandboxes:
+#          vllm:
+#            device_env: XPU_VISIBLE_DEVICES
+#            environment:
+#              XPU_WORKER_MULTIPROC_METHOD: spawn
+#            devices:
+#              - /dev/xpu0
+#              - /dev/xpu1
+#              - /dev/xpu2
+#              - /dev/xpu3
+#              - /dev/xpu_ctl
+#            volumes:
+#              - /usr/local/xpu:/usr/local/xpu
+#              - /root/.cache:/root/.cache
+#            privileged: true
+#            runtime: runc
+#            shm_size_gb: 100
+#            capabilities:
+#              - SYS_ADMIN
+#              - SYS_RAWIO
+#              - IPC_LOCK
 

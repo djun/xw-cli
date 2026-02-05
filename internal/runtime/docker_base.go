@@ -110,6 +110,13 @@ type DockerRuntimeBase struct {
 	instances  map[string]*Instance    // Active instances indexed by ID
 	serverName string                  // Server identifier for multi-server deployments
 	runtimeName string                 // Runtime type name (e.g., "vllm-docker", "mindie-docker")
+	
+	// Unified sandbox management (configuration-first design)
+	// Extended sandboxes (from config) have higher priority than core sandboxes (code)
+	// This allows users to override default implementations via configuration
+	coreSandboxes []func() DeviceSandbox  // Core sandboxes registered by runtime
+	extSandboxes  []func() DeviceSandbox  // Extended sandboxes loaded from config
+	sandboxOnce   sync.Once               // Ensures extended sandboxes loaded once
 }
 
 // NewDockerRuntimeBase creates and initializes a new Docker runtime base.
@@ -199,6 +206,109 @@ func (b *DockerRuntimeBase) GetServerName() string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.serverName
+}
+
+// RegisterCoreSandboxes registers core device sandboxes for this runtime.
+//
+// This method should be called during runtime initialization to register
+// code-based sandbox implementations for mainstream accelerators.
+//
+// Core sandboxes serve as fallbacks when no configuration-based sandboxes
+// are found for a device type. This design allows users to override default
+// implementations via configuration.
+//
+// Parameters:
+//   - sandboxes: List of sandbox constructor functions
+//
+// Thread Safety: Should be called during initialization before concurrent access
+//
+// Example:
+//
+//	base.RegisterCoreSandboxes([]func() runtime.DeviceSandbox{
+//	    func() runtime.DeviceSandbox { return NewAscendSandbox() },
+//	    func() runtime.DeviceSandbox { return NewMetaXSandbox() },
+//	})
+func (b *DockerRuntimeBase) RegisterCoreSandboxes(sandboxes []func() DeviceSandbox) {
+	b.coreSandboxes = sandboxes
+	logger.Debug("Registered %d core sandbox(es) for %s", len(sandboxes), b.runtimeName)
+}
+
+// SelectSandbox selects an appropriate sandbox for the given device type.
+//
+// This method implements a configuration-first selection strategy:
+//  1. Check extended sandboxes from configuration (higher priority)
+//  2. Fall back to core sandboxes from code (lower priority)
+//
+// Extended sandboxes are loaded lazily on first call to avoid timing issues
+// with configuration file loading.
+//
+// Parameters:
+//   - deviceType: Device config_key to find sandbox for (e.g., "ascend-910b")
+//
+// Returns:
+//   - DeviceSandbox instance if found
+//   - Error if no sandbox supports the device type
+//
+// Thread Safety: Safe for concurrent calls
+//
+// Example:
+//
+//	sandbox, err := base.SelectSandbox("ascend-910b")
+//	if err != nil {
+//	    return fmt.Errorf("no sandbox for device: %w", err)
+//	}
+func (b *DockerRuntimeBase) SelectSandbox(deviceType string) (DeviceSandbox, error) {
+	// Lazy load extended sandboxes from configuration
+	b.loadExtendedSandboxes()
+	
+	// Priority 1: Try extended sandboxes from configuration
+	// These have higher priority as they represent explicit user configuration
+	for _, constructor := range b.extSandboxes {
+		sb := constructor()
+		if sb.Supports(deviceType) {
+			logger.Debug("Selected extended sandbox for %s: %T", deviceType, sb)
+			return sb, nil
+		}
+	}
+	
+	// Priority 2: Fall back to core sandboxes from code
+	// These are default implementations for mainstream accelerators
+	for _, constructor := range b.coreSandboxes {
+		sb := constructor()
+		if sb.Supports(deviceType) {
+			logger.Debug("Selected core sandbox for %s: %T", deviceType, sb)
+			return sb, nil
+		}
+	}
+	
+	return nil, fmt.Errorf("no sandbox found for device type: %s", deviceType)
+}
+
+// loadExtendedSandboxes loads extended sandboxes from device configuration.
+//
+// This method uses sync.Once to ensure sandboxes are only loaded once,
+// even under concurrent access. Loading is deferred until first sandbox
+// selection to avoid timing issues with configuration file initialization.
+//
+// The method extracts the engine name from the runtime name (e.g., "vllm-docker" -> "vllm")
+// and loads corresponding sandbox configurations from devices.yaml.
+//
+// Thread Safety: Safe for concurrent calls (protected by sync.Once)
+func (b *DockerRuntimeBase) loadExtendedSandboxes() {
+	b.sandboxOnce.Do(func() {
+		// Extract engine name from runtime name (e.g., "vllm-docker" -> "vllm")
+		engineName := b.runtimeName
+		if idx := strings.Index(engineName, "-"); idx > 0 {
+			engineName = engineName[:idx]
+		}
+		
+		// Load extended sandboxes for this engine
+		b.extSandboxes = LoadExtendedSandboxes(engineName)
+		
+		if len(b.extSandboxes) > 0 {
+			logger.Info("Loaded %d extended sandbox(es) for %s", len(b.extSandboxes), b.runtimeName)
+		}
+	})
 }
 
 // Start starts a created Docker container instance.
