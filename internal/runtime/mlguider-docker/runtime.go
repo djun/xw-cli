@@ -8,7 +8,7 @@
 //   - OpenAI-compatible API endpoints
 //
 // Architecture:
-//   - Uses host networking for optimal performance (--net=host)
+//   - Uses bridge networking with port mapping for multi-instance support
 //   - Requires Ascend driver mounted from host system
 //   - Supports multi-NPU distributed inference via WORLD_SIZE and device arrays
 //   - Exposes port 8000 for OpenAI-compatible inference API
@@ -25,7 +25,7 @@
 //   - TENSOR_PARALLEL: Number of devices for tensor parallelism
 //   - EXPERT_PARALLEL: Number of devices for expert parallelism (MoE models)
 //   - WORLD_SIZE: Total number of NPU devices (should equal TENSOR_PARALLEL * EXPERT_PARALLEL)
-//   - DEVICES: JSON array of device indices (e.g., "[0,1,2,3]")
+//   - DEVICES: Comma-separated device indices (e.g., "0,1,2,3")
 //   - API_PORT: HTTP server port (default: 8000)
 //   - MODEL_NAME: Model name for API requests
 package mlguiderdocker
@@ -128,11 +128,11 @@ func NewRuntime() (*Runtime, error) {
 //  3. Prepares device-specific environment variables (DEVICES, WORLD_SIZE, etc.)
 //  4. Configures MLGuider-specific environment (MODEL_PATH, TENSOR_PARALLEL, etc.)
 //  5. Sets up volume mounts for drivers, models, and system binaries
-//  6. Creates Docker container with host networking and privileged mode
+//  6. Creates Docker container with bridge networking and privileged mode
 //  7. Registers instance in tracking map
 //
 // MLGuider-Specific Configuration:
-//   - Uses host network mode (--net=host) for optimal performance
+//   - Uses bridge network mode with port mapping for multi-instance support
 //   - Mounts Ascend driver from /usr/local/Ascend/driver
 //   - Configures multi-device parallelism based on device count
 //   - Supports both original and converted model paths

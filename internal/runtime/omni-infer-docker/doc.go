@@ -19,17 +19,20 @@
 //	      omni-infer:
 //	        arm64: omniinfer-xw:latest
 //	    ext_sandboxes:
+//	      # Common configuration (shared by all engines)
+//	      devices:
+//	        - /dev/davinci0
+//	        - /dev/davinci1
+//	        - /dev/davinci_manager
+//	        - /dev/devmm_svm
+//	        - /dev/hisi_hdc
+//	      volumes:
+//	        - /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro
+//	        - /usr/local/dcmi:/usr/local/dcmi:ro
+//	      runtime: runc
+//	      # Engine-specific configurations
 //	      omni-infer:
 //	        device_env: ASCEND_RT_VISIBLE_DEVICES
-//	        devices:
-//	          - /dev/davinci0
-//	          - /dev/davinci1
-//	          - /dev/davinci_manager
-//	          - /dev/devmm_svm
-//	          - /dev/hisi_hdc
-//	        volumes:
-//	          - /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro
-//	          - /usr/local/dcmi:/usr/local/dcmi:ro
 //	        privileged: true
 //	        shm_size_gb: 500
 //

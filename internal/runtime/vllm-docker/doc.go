@@ -24,13 +24,17 @@
 //	chip_models:
 //	  - config_key: ascend-910b
 //	    ext_sandboxes:
+//	      # Common configuration (shared by all engines)
+//	      devices:
+//	        - /dev/davinci0
+//	        - /dev/davinci_manager
+//	      volumes:
+//	        - /usr/local/Ascend/driver:/usr/local/Ascend/driver
+//	        - /root/.cache:/root/.cache
+//	      runtime: runc
+//	      # Engine-specific configurations
 //	      vllm:
 //	        device_env: ASCEND_RT_VISIBLE_DEVICES
-//	        devices:
-//	          - /dev/davinci0
-//	          - /dev/davinci_manager
-//	        volumes:
-//	          - /usr/local/Ascend/driver:/usr/local/Ascend/driver
 //	        privileged: true
 //	        shm_size_gb: 100
 //
@@ -234,12 +238,15 @@
 // After (Config):
 //
 //	ext_sandboxes:
+//	  devices:
+//	    - /dev/davinci0  # Auto-matched by index
+//	    - /dev/davinci1
+//	    - /dev/davinci_manager  # Always mounted
+//	    - /dev/devmm_svm
+//	  runtime: runc
 //	  vllm:
-//	    devices:
-//	      - /dev/davinci0  # Auto-matched by index
-//	      - /dev/davinci1
-//	      - /dev/davinci_manager  # Always mounted
-//	      - /dev/devmm_svm
+//	    device_env: ASCEND_RT_VISIBLE_DEVICES
+//	    privileged: true
 //
 // The configuration-driven approach reduces code maintenance and allows
 // users to adapt to new hardware without waiting for releases.

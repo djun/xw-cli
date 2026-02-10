@@ -396,13 +396,17 @@ func extractTrailingNumber(path string) int {
 //	    model_name: Kunlun XPU R200
 //	    device_id: "0x1234"
 //	    ext_sandboxes:
+//	      # Common configuration (shared by all engines)
+//	      devices: [/dev/xpu0, /dev/xpu1, /dev/xpu_ctl]
+//	      volumes: [/usr/local/xpu:/usr/local/xpu]
+//	      runtime: runc
+//	      # Engine-specific configurations
 //	      vllm:
 //	        device_env: XPU_VISIBLE_DEVICES
-//	        devices: [/dev/xpu0, /dev/xpu1, /dev/xpu_ctl]
-//	        # ... other config
+//	        privileged: true
 //	      mindie:
 //	        device_env: XPU_VISIBLE_DEVICES
-//	        # ... mindie-specific config
+//	        privileged: true
 //
 // Parameters:
 //   - engineName: Engine name to load configs for ("vllm", "mindie", "mlguider")

@@ -17,18 +17,20 @@
 //	chip_models:
 //	  - config_key: ascend-910b
 //	    ext_sandboxes:
+//	      # Common configuration (shared by all engines)
+//	      devices:
+//	        - /dev/davinci0
+//	        - /dev/davinci1
+//	        - /dev/davinci_manager
+//	        - /dev/devmm_svm
+//	        - /dev/hisi_hdc
+//	      volumes:
+//	        - /usr/local/Ascend/driver:/usr/local/Ascend/driver
+//	        - /root/.cache:/root/.cache
+//	      runtime: runc
+//	      # Engine-specific configurations
 //	      mindie:
 //	        device_env: MINDIE_NPU_DEVICE_IDS
-//	        devices:
-//	          - /dev/davinci0
-//	          - /dev/davinci1
-//	          - /dev/davinci_manager
-//	          - /dev/devmm_svm
-//	          - /dev/hisi_hdc
-//	        volumes:
-//	          - /usr/local/Ascend/driver:/usr/local/Ascend/driver
-//	          - /var/log/npu/slog:/var/log/npu/slog
-//	          - /var/log/npu/profiling:/var/log/npu/profiling
 //	        privileged: true
 //	        shm_size_gb: 100
 //

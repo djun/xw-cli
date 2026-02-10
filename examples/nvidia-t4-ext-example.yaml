@@ -17,8 +17,28 @@
             amd64: vllm/vllm-openai:latest
             arm64: NONE
         
-        # Extended sandbox configuration for vLLM
         ext_sandboxes:
+          # Common configuration (shared by all engines)
+          # Device nodes to mount
+          # Indexed devices (with numbers): mounted only if that GPU is allocated
+          # Shared devices (no numbers): always mounted
+          devices:
+            - /dev/nvidia0
+            - /dev/nvidia1
+            - /dev/nvidia2
+            - /dev/nvidia3
+            - /dev/nvidiactl      # shared device
+            - /dev/nvidia-uvm     # shared device
+            - /dev/nvidia-uvm-tools
+          
+          # Volume mounts (host:container[:ro])
+          volumes:
+            - /usr/local/cuda:/usr/local/cuda:ro
+          
+          # Docker runtime
+          runtime: nvidia        # requires nvidia-docker2
+          
+          # Engine-specific configurations
           vllm:
             # Device visibility environment variable (automatically set to "0,1,2,...")
             device_env: CUDA_VISIBLE_DEVICES
@@ -28,25 +48,8 @@
               NVIDIA_VISIBLE_DEVICES: all
               NVIDIA_DRIVER_CAPABILITIES: compute,utility
             
-            # Device nodes to mount
-            # Indexed devices (with numbers): mounted only if that GPU is allocated
-            # Shared devices (no numbers): always mounted
-            devices:
-              - /dev/nvidia0
-              - /dev/nvidia1
-              - /dev/nvidia2
-              - /dev/nvidia3
-              - /dev/nvidiactl      # shared device
-              - /dev/nvidia-uvm     # shared device
-              - /dev/nvidia-uvm-tools
-            
-            # Volume mounts (host:container[:ro])
-            volumes:
-              - /usr/local/cuda:/usr/local/cuda:ro
-            
             # Container settings
             privileged: false
-            runtime: nvidia        # requires nvidia-docker2
             shm_size_gb: 32        # shared memory size
             capabilities: []
 

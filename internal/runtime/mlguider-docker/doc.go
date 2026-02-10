@@ -17,19 +17,20 @@
 //	chip_models:
 //	  - config_key: ascend-310p
 //	    ext_sandboxes:
+//	      # Common configuration (shared by all engines)
+//	      devices:
+//	        - /dev/davinci0
+//	        - /dev/davinci1
+//	        - /dev/davinci_manager
+//	        - /dev/devmm_svm
+//	        - /dev/hisi_hdc
+//	      volumes:
+//	        - /usr/local/Ascend/driver:/usr/local/Ascend/driver
+//	        - /root/.cache:/root/.cache
+//	      runtime: runc
+//	      # Engine-specific configurations
 //	      mlguider:
-//	        device_env: MINDIE_NPU_DEVICE_IDS
-//	        devices:
-//	          - /dev/davinci0
-//	          - /dev/davinci1
-//	          - /dev/davinci_manager
-//	          - /dev/devmm_svm
-//	          - /dev/hisi_hdc
-//	        volumes:
-//	          - /usr/local/Ascend/driver:/usr/local/Ascend/driver
-//	          - /usr/local/Ascend/add-ons:/usr/local/Ascend/add-ons
-//	          - /var/log/npu/slog:/var/log/npu/slog
-//	          - /var/log/npu/profiling:/var/log/npu/profiling
+//	        device_env: DEVICES
 //	        privileged: true
 //	        shm_size_gb: 100
 //
@@ -55,12 +56,12 @@
 //     - EXPERT_PARALLEL: Expert parallelism for MoE models
 //     - WORLD_SIZE: Must equal TENSOR_PARALLEL * EXPERT_PARALLEL
 //
-//  3. Device Array Format:
-//     Uses JSON array format for DEVICES environment variable:
-//     DEVICES='[0,1,2,3]'
+//  3. Device Specification:
+//     Uses comma-separated format for DEVICES environment variable:
+//     DEVICES='0,1,2,3'
 //
 //  4. Networking:
-//     Uses host networking (--net=host) for optimal performance
+//     Uses bridge networking with port mapping for multi-instance support
 //
 // # Dual Model Directory Support
 //
