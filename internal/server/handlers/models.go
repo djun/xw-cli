@@ -617,26 +617,13 @@ func (h *Handler) getModelPath(modelsDir, modelName string) string {
 // Returns:
 //   - true if directory contains at least one regular file
 func (h *Handler) hasModelFiles(dirPath string) bool {
-	// Check for .downloaded marker file first
+	// Only check for .downloaded marker file
 	// This marker is created after successful model download
+	// Models without this marker are considered incomplete/in-progress and will not be shown
 	markerPath := filepath.Join(dirPath, ".downloaded")
 	if _, err := os.Stat(markerPath); err == nil {
 		// Marker exists, model download is complete
 		return true
-	}
-	
-	// Fallback: check for model files (for backward compatibility with existing models)
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return false
-	}
-	
-	// Look for at least one regular file
-	for _, entry := range entries {
-		if !entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
-			// Found a non-hidden regular file
-			return true
-		}
 	}
 	
 	return false
