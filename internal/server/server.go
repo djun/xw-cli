@@ -167,6 +167,11 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/config/set", h.ConfigSet)
 	mux.HandleFunc("/api/config/get", h.ConfigGet)
 	
+	// Configuration update endpoints
+	mux.HandleFunc("/api/update/list", h.ListVersions)
+	mux.HandleFunc("/api/update/current", h.GetCurrentVersion)
+	mux.HandleFunc("/api/update", h.Update)
+	
 	// Runtime management endpoints
 	mux.HandleFunc("/api/runtime/start", h.StartModel)
 	mux.HandleFunc("/api/runtime/instances", h.ListInstances)

@@ -16,10 +16,21 @@ const (
 	ServerNameLength = 6
 )
 
-// ServerIdentity represents the server's unique identity
+// ServerIdentity represents the server's unique identity and configuration state.
+// This struct holds persistent server-specific settings that are stored in server.conf.
 type ServerIdentity struct {
-	Name     string `json:"name"`
+	// Name is the unique identifier for this server instance.
+	// Generated randomly on first start if not present.
+	Name string `json:"name"`
+	
+	// Registry is the URL to the configuration package registry.
+	// This registry maintains available configuration versions.
 	Registry string `json:"registry"`
+	
+	// ConfigVersion is the currently active configuration version.
+	// Defaults to the binary version (main.Version) if not specified.
+	// Format: vX.Y.Z (e.g., "v0.0.1")
+	ConfigVersion string `json:"config_version"`
 }
 
 // GenerateServerName generates a random 6-character server name
@@ -36,8 +47,14 @@ func GenerateServerName() string {
 	return string(b)
 }
 
-// GetOrCreateServerIdentity gets the server identity from server.conf
-// or creates a new one if it doesn't exist
+// GetOrCreateServerIdentity retrieves the server identity from server.conf
+// or creates a new one if it doesn't exist.
+//
+// This method ensures that all required fields (name, registry, config_version)
+// are present and populated with appropriate default values if missing.
+// The config_version defaults to the binary version if not specified.
+//
+// Returns the server identity or an error if reading/writing fails.
 func (c *Config) GetOrCreateServerIdentity() (*ServerIdentity, error) {
 	confPath := filepath.Join(c.Storage.DataDir, ServerConfFileName)
 	
@@ -49,14 +66,20 @@ func (c *Config) GetOrCreateServerIdentity() (*ServerIdentity, error) {
 			return nil, err
 		}
 		
-		// Check if registry is missing and add it
+		// Check for missing fields and add defaults
 		needsUpdate := false
+		
 		if identity.Registry == "" {
 			identity.Registry = DefaultRegistry
 			needsUpdate = true
 		}
 		
-		// Update file if needed
+		if identity.ConfigVersion == "" {
+			identity.ConfigVersion = c.getBinaryVersion()
+			needsUpdate = true
+		}
+		
+		// Update file if any field was missing
 		if needsUpdate {
 			if err := c.writeServerIdentity(confPath, identity); err != nil {
 				return nil, fmt.Errorf("failed to update server identity: %w", err)
@@ -66,10 +89,11 @@ func (c *Config) GetOrCreateServerIdentity() (*ServerIdentity, error) {
 		return identity, nil
 	}
 	
-	// File doesn't exist, create new identity
+	// File doesn't exist, create new identity with all defaults
 	identity := &ServerIdentity{
-		Name:     GenerateServerName(),
-		Registry: DefaultRegistry,
+		Name:          GenerateServerName(),
+		Registry:      DefaultRegistry,
+		ConfigVersion: c.getBinaryVersion(),
 	}
 	
 	// Write to file
@@ -78,6 +102,16 @@ func (c *Config) GetOrCreateServerIdentity() (*ServerIdentity, error) {
 	}
 	
 	return identity, nil
+}
+
+// getBinaryVersion returns the binary version for use as default config version.
+// This is stored in the Config during initialization from main.Version.
+func (c *Config) getBinaryVersion() string {
+	if c.BinaryVersion != "" {
+		return c.BinaryVersion
+	}
+	// Fallback to v0.0.1 if not set (should not happen in normal operation)
+	return "v0.0.1"
 }
 
 // readServerIdentity reads server identity from file
@@ -105,10 +139,13 @@ func (c *Config) readServerIdentity(path string) (*ServerIdentity, error) {
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
 		
-		if key == "name" {
+		switch key {
+		case "name":
 			identity.Name = value
-		} else if key == "registry" {
+		case "registry":
 			identity.Registry = value
+		case "config_version":
+			identity.ConfigVersion = value
 		}
 	}
 	
@@ -119,9 +156,21 @@ func (c *Config) readServerIdentity(path string) (*ServerIdentity, error) {
 	return identity, nil
 }
 
-// writeServerIdentity writes server identity to file
+// writeServerIdentity writes server identity to file in key=value format.
+// The file includes helpful comments for each configuration field.
 func (c *Config) writeServerIdentity(path string, identity *ServerIdentity) error {
-	content := fmt.Sprintf("# XW Server Configuration\n# Do not modify this file unless you know what you are doing\n\n# Server instance unique identifier\nname=%s\n\n# Configuration package registry URL\nregistry=%s\n", identity.Name, identity.Registry)
+	content := fmt.Sprintf(`# XW Server Configuration
+# Do not modify this file unless you know what you are doing
+
+# Server instance unique identifier
+name=%s
+
+# Configuration package registry URL
+registry=%s
+
+# Configuration version currently in use
+config_version=%s
+`, identity.Name, identity.Registry, identity.ConfigVersion)
 	
 	return os.WriteFile(path, []byte(content), 0644)
 }

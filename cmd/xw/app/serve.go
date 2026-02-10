@@ -124,6 +124,9 @@ chip devices. Press Ctrl+C to gracefully shut down the server.`,
 func runServe(opts *ServeOptions) error {
 	// Create configuration with custom directories if specified
 	cfg := config.NewConfigWithCustomDirs(opts.ConfigDir, opts.DataDir)
+	
+	// Set binary version for default config_version
+	cfg.BinaryVersion = GetVersion()
 	cfg.Server.Host = opts.Host
 	cfg.Server.Port = opts.Port
 
@@ -142,10 +145,48 @@ func runServe(opts *ServeOptions) error {
 	cfg.Server.Name = identity.Name
 	cfg.Server.Registry = identity.Registry
 	logger.Info("Server identity: %s", identity.Name)
+	logger.Info("Configuration version: %s", identity.ConfigVersion)
 	
-	// Load configurations from config directory
-	devicesConfigPath := filepath.Join(cfg.Storage.ConfigDir, "devices.yaml")
-	modelsConfigPath := filepath.Join(cfg.Storage.ConfigDir, "models.yaml")
+	// Construct versioned config path
+	versionedConfigDir := filepath.Join(cfg.Storage.ConfigDir, identity.ConfigVersion)
+	
+	// Check if versioned config directory exists
+	if _, err := os.Stat(versionedConfigDir); os.IsNotExist(err) {
+		logger.Info("Configuration version %s not found locally, attempting to download...", identity.ConfigVersion)
+		
+		// Create version manager
+		vm := config.NewVersionManager(cfg)
+		
+		// Fetch registry
+		_, err := vm.FetchRegistry()
+		if err != nil {
+			return fmt.Errorf("failed to fetch registry: %w\n"+
+				"Configuration version %s not found at %s", 
+				err, identity.ConfigVersion, versionedConfigDir)
+		}
+		
+		// Find the package for this version
+		pkg, err := vm.FindPackage(identity.ConfigVersion)
+		if err != nil {
+			return fmt.Errorf("failed to find package: %w", err)
+		}
+		if pkg == nil {
+			return fmt.Errorf("configuration version %s not found in registry\n"+
+				"Available at: %s", 
+				identity.ConfigVersion, versionedConfigDir)
+		}
+		
+		// Download and extract the package
+		logger.Info("Downloading configuration version %s...", identity.ConfigVersion)
+		if err := vm.DownloadPackage(pkg); err != nil {
+			return fmt.Errorf("failed to download configuration: %w", err)
+		}
+		logger.Info("Configuration downloaded successfully")
+	}
+	
+	// Load configurations from versioned config directory
+	devicesConfigPath := filepath.Join(versionedConfigDir, "devices.yaml")
+	modelsConfigPath := filepath.Join(versionedConfigDir, "models.yaml")
 	logger.Info("Loading configurations from: %s", cfg.Storage.ConfigDir)
 	logger.Info("Data directory: %s", cfg.Storage.DataDir)
 	

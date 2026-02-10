@@ -52,6 +52,11 @@ type Config struct {
 	// Storage holds the storage configuration including directories for
 	// data and configuration files.
 	Storage StorageConfig `json:"storage"`
+	
+	// BinaryVersion is the version of the xw binary (e.g., "v0.0.1").
+	// Set from main.Version during initialization.
+	// Used as the default config_version if not specified in server.conf.
+	BinaryVersion string `json:"-"`
 }
 
 // ServerConfig represents the HTTP server configuration.
