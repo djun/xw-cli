@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 
 # Version and build info
 VERSION="${VERSION:-0.0.1}"
-CONFIG_VERSION="${CONFIG_VERSION:-v0.0.1}"
+CONFIG_VERSION="${CONFIG_VERSION:-0.0.1}"
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(date -u '+%Y%m%d')
 
