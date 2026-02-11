@@ -27,6 +27,9 @@ type ShowOptions struct {
 
 	// License displays the model license
 	License bool
+
+	// Engines displays supported engines
+	Engines bool
 }
 
 // NewShowCommand creates the show command.
@@ -36,7 +39,7 @@ type ShowOptions struct {
 //
 // Usage:
 //
-//	xw show MODEL [--modelfile|--parameters|--template|--system|--license]
+//	xw show MODEL [--modelfile|--parameters|--template|--system|--license|--engines]
 //
 // Examples:
 //
@@ -48,6 +51,9 @@ type ShowOptions struct {
 //
 //	# Show only parameters
 //	xw show qwen2.5-7b-instruct --parameters
+//
+//	# Show only supported engines
+//	xw show qwen2.5-7b-instruct --engines
 //
 // Parameters:
 //   - globalOpts: Global options shared across commands
@@ -85,7 +91,10 @@ otherwise from the model specification (built-in configuration).`,
   xw show qwen2.5-7b-instruct --template
 
   # Show only license
-  xw show qwen2.5-7b-instruct --license`,
+  xw show qwen2.5-7b-instruct --license
+
+  # Show only supported engines
+  xw show qwen2.5-7b-instruct --engines`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Model = args[0]
@@ -98,6 +107,7 @@ otherwise from the model specification (built-in configuration).`,
 	cmd.Flags().BoolVar(&opts.Template, "template", false, "show template")
 	cmd.Flags().BoolVar(&opts.System, "system", false, "show system prompt")
 	cmd.Flags().BoolVar(&opts.License, "license", false, "show license")
+	cmd.Flags().BoolVar(&opts.Engines, "engines", false, "show supported engines")
 
 	return cmd
 }
@@ -145,6 +155,11 @@ func runShow(opts *ShowOptions) error {
 
 	if opts.License {
 		displayLicense(modelInfo)
+		return nil
+	}
+
+	if opts.Engines {
+		displayEngines(modelInfo)
 		return nil
 	}
 
@@ -326,5 +341,20 @@ func displaySystem(info map[string]interface{}) {
 func displayLicense(info map[string]interface{}) {
 	if license, ok := info["license"].(string); ok && license != "" {
 		fmt.Println(license)
+	}
+}
+
+// displayEngines displays only the supported engines
+func displayEngines(info map[string]interface{}) {
+	if engines, ok := info["supported_engines"].(map[string]interface{}); ok && len(engines) > 0 {
+		for device, engineList := range engines {
+			if engList, ok := engineList.([]interface{}); ok && len(engList) > 0 {
+				for _, eng := range engList {
+					if engStr, ok := eng.(string); ok {
+						fmt.Printf("%s %s\n", device, engStr)
+					}
+				}
+			}
+		}
 	}
 }
