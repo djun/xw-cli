@@ -130,6 +130,7 @@ type RunInstance struct {
 	CreatedAt      time.Time              `json:"created_at"`
 	StartedAt      time.Time              `json:"started_at,omitempty"`
 	Port           int                    `json:"port"`
+	ContainerID    string                 `json:"container_id,omitempty"` // Docker container ID
 	Error          string                 `json:"error,omitempty"`
 	Config         map[string]interface{} `json:"config,omitempty"`
 }

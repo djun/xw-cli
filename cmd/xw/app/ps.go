@@ -83,7 +83,7 @@ func runPs(opts *PsOptions) error {
 
 	// Display instances in a table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ALIAS\tMODEL\tENGINE\tSTATE\tUPTIME")
+	fmt.Fprintln(w, "ALIAS\tMODEL\tENGINE\tLOCAL PORT\tCONTAINER ID\tSTATE\tUPTIME")
 
 	for _, instance := range instances {
 		instanceMap, ok := instance.(map[string]interface{})
@@ -116,10 +116,32 @@ func runPs(opts *PsOptions) error {
 			uptime = "-"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		// Get port
+		var port string
+		if portNum, ok := instanceMap["port"].(float64); ok && portNum > 0 {
+			port = fmt.Sprintf("%d", int(portNum))
+		} else {
+			port = "-"
+		}
+
+		// Get container ID (show first 12 characters like Docker does)
+		var containerID string
+		if fullID, ok := instanceMap["container_id"].(string); ok && fullID != "" {
+			if len(fullID) > 12 {
+				containerID = fullID[:12]
+			} else {
+				containerID = fullID
+			}
+		} else {
+			containerID = "-"
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			alias,
 			modelID,
 			engine,
+			port,
+			containerID,
 			state,
 			uptime)
 	}

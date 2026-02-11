@@ -756,6 +756,7 @@ func (m *Manager) ListCompat() []*RunInstance {
 			CreatedAt:      inst.CreatedAt,
 			StartedAt:      inst.StartedAt,
 			Port:           inst.Port,
+			ContainerID:    inst.Metadata["container_id"], // Docker container ID
 			Error:          inst.Error,
 		})
 	}
