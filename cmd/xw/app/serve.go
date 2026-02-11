@@ -184,26 +184,17 @@ func runServe(opts *ServeOptions) error {
 		logger.Info("Configuration downloaded successfully")
 	}
 	
-	// Load configurations from versioned config directory
-	devicesConfigPath := filepath.Join(versionedConfigDir, "devices.yaml")
-	modelsConfigPath := filepath.Join(versionedConfigDir, "models.yaml")
-	logger.Info("Loading configurations from: %s", cfg.Storage.ConfigDir)
+	// Load all configurations at startup
+	logger.Info("Loading configurations from: %s", versionedConfigDir)
 	logger.Info("Data directory: %s", cfg.Storage.DataDir)
 	
-	// Load runtime images configuration (from devices.yaml)
-	_, runtimeImagesErr := config.LoadRuntimeImagesConfigFrom(devicesConfigPath)
-	if runtimeImagesErr != nil {
-		return fmt.Errorf("failed to load runtime images config: %w", runtimeImagesErr)
+	if err := cfg.LoadVersionedConfigs(identity.ConfigVersion, server.InitializeModels); err != nil {
+		return fmt.Errorf("failed to load configurations: %w", err)
 	}
-	logger.Info("Runtime images configuration loaded")
-	
-	// Initialize models from configuration
-	if err := server.InitializeModels(modelsConfigPath); err != nil {
-		return fmt.Errorf("failed to initialize models: %w", err)
-	}
+	logger.Info("All configurations loaded successfully")
 	
 	// Initialize runtime manager with available runtimes and server identity
-	runtimeMgr, err := server.InitializeRuntimeManager()
+	runtimeMgr, err := server.InitializeRuntimeManager(cfg.RuntimeParams)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime manager: %w", err)
 	}

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	
+	"github.com/tsingmaoai/xw-cli/internal/config"
 	"github.com/tsingmaoai/xw-cli/internal/logger"
 	"github.com/tsingmaoai/xw-cli/internal/models"
 	"github.com/tsingmaoai/xw-cli/internal/runtime"
@@ -44,13 +45,16 @@ func InitializeModels(configPath string) error {
 // Runtime registration failures are logged but don't cause the function
 // to fail, allowing the system to operate with whatever runtimes are available.
 //
+// Parameters:
+//   - runtimeParams: Runtime parameters loaded at startup
+//
 // Returns:
 //   - Configured runtime manager
 //   - Error only if manager creation fails
-func InitializeRuntimeManager() (*runtime.Manager, error) {
+func InitializeRuntimeManager(runtimeParams *config.RuntimeParamsConfig) (*runtime.Manager, error) {
 	// Create runtime manager
 	// Server name will be set later by the caller
-	mgr, err := runtime.NewManager("")
+	mgr, err := runtime.NewManager("", runtimeParams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create runtime manager: %w", err)
 	}

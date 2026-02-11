@@ -53,6 +53,9 @@ type Config struct {
 	// data and configuration files.
 	Storage StorageConfig `json:"storage"`
 	
+	// RuntimeParams holds runtime parameter templates loaded at startup.
+	RuntimeParams *RuntimeParamsConfig `json:"-"`
+	
 	// BinaryVersion is the version of the xw binary (e.g., "v0.0.1").
 	// Set from main.Version during initialization.
 	// Used as the default config_version if not specified in server.conf.
@@ -242,5 +245,52 @@ func (c *Config) EnsureDirectories() error {
 		}
 	}
 
+	return nil
+}
+
+// LoadVersionedConfigs loads all configuration files at startup.
+//
+// This method loads the three main configuration files from the versioned
+// config directory at startup time:
+//   - runtime_params.yaml: Runtime parameter templates (stored in Config.RuntimeParams)
+//   - devices.yaml: Device and runtime images config (cached globally)
+//   - models.yaml: Model definitions (registered globally via loadModels callback)
+//
+// After this call, all configurations are loaded and ready to use throughout
+// the application lifecycle. No further path handling or file loading needed.
+//
+// Parameters:
+//   - configVersion: Configuration version string (e.g., "v0.0.1")
+//   - loadModels: Callback function to load and register models from models.yaml
+//
+// Returns:
+//   - error if any configuration file fails to load
+//
+// Example:
+//
+//	err := cfg.LoadVersionedConfigs("v0.0.1", server.InitializeModels)
+func (c *Config) LoadVersionedConfigs(configVersion string, loadModels func(string) error) error {
+	versionedDir := filepath.Join(c.Storage.ConfigDir, configVersion)
+	
+	// Load runtime_params.yaml and store in Config
+	runtimeParamsPath := filepath.Join(versionedDir, "runtime_params.yaml")
+	runtimeParams, err := LoadRuntimeParamsConfigFrom(runtimeParamsPath)
+	if err != nil {
+		return fmt.Errorf("failed to load runtime_params.yaml: %w", err)
+	}
+	c.RuntimeParams = runtimeParams
+	
+	// Load devices.yaml (internally cached globally)
+	devicesPath := filepath.Join(versionedDir, "devices.yaml")
+	if _, err := LoadRuntimeImagesConfigFrom(devicesPath); err != nil {
+		return fmt.Errorf("failed to load devices.yaml: %w", err)
+	}
+	
+	// Load models.yaml (registered globally via callback)
+	modelsPath := filepath.Join(versionedDir, "models.yaml")
+	if err := loadModels(modelsPath); err != nil {
+		return fmt.Errorf("failed to load models.yaml: %w", err)
+	}
+	
 	return nil
 }
