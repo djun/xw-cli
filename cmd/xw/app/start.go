@@ -206,7 +206,6 @@ func runStart(opts *StartOptions) error {
 	// Handle Ctrl+C in background
 	go func() {
 		<-sigChan
-		fmt.Println("\n\nReceived interrupt signal. Cancelling operation...")
 		cancel()
 	}()
 
@@ -278,7 +277,7 @@ func runStart(opts *StartOptions) error {
 	select {
 	case <-logSigChan:
 		fmt.Println()
-		fmt.Printf("\nReceived interrupt signal. Removing %s...\n", instanceAlias)
+		fmt.Printf("Removing %s...\n", instanceAlias)
 		
 		// Remove the instance directly (no need to stop first)
 		if err := client.RemoveInstanceByAlias(instanceAlias, true); err != nil {
