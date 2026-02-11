@@ -346,12 +346,22 @@ func displayLicense(info map[string]interface{}) {
 
 // displayEngines displays only the supported engines
 func displayEngines(info map[string]interface{}) {
+	fmt.Println("Supported Engines")
+	fmt.Println()
+	
 	if engines, ok := info["supported_engines"].(map[string]interface{}); ok && len(engines) > 0 {
 		for device, engineList := range engines {
 			if engList, ok := engineList.([]interface{}); ok && len(engList) > 0 {
+				engineStrs := make([]string, 0, len(engList))
 				for _, eng := range engList {
 					if engStr, ok := eng.(string); ok {
-						fmt.Printf("%s %s\n", device, engStr)
+						engineStrs = append(engineStrs, engStr)
+					}
+				}
+				if len(engineStrs) > 0 {
+					fmt.Printf("  %-20s%s\n", device, engineStrs[0])
+					for i := 1; i < len(engineStrs); i++ {
+						fmt.Printf("  %-20s%s\n", "", engineStrs[i])
 					}
 				}
 			}
