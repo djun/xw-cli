@@ -297,3 +297,60 @@ func (h *Handler) ConfigGet(w http.ResponseWriter, r *http.Request) {
 	h.WriteJSON(w, response, http.StatusOK)
 }
 
+// ConfigReload handles POST /api/config/reload requests.
+//
+// This endpoint reloads all configuration files (devices.yaml, models.yaml,
+// runtime_params.yaml) from the versioned config directory without restarting
+// the server. This is useful after updating configuration versions.
+//
+// HTTP Method: POST
+// Path: /api/config/reload
+//
+// Response: 200 OK
+//
+//	{
+//	  "message": "Configuration reloaded successfully",
+//	  "config_version": "v0.0.2"
+//	}
+//
+// Error Responses:
+//   - 500 Internal Server Error: Failed to reload configuration
+//
+// Example:
+//
+//	curl -X POST http://localhost:11581/api/config/reload
+func (h *Handler) ConfigReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.WriteError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get current config version
+	identity, err := h.config.GetOrCreateServerIdentity()
+	if err != nil {
+		logger.Error("Failed to get server identity: %v", err)
+		h.WriteError(w, "failed to get server identity", http.StatusInternalServerError)
+		return
+	}
+
+	// Reload all versioned configs
+	logger.Info("Reloading configurations for version: %s", identity.ConfigVersion)
+	if err := h.config.LoadVersionedConfigs(identity.ConfigVersion, InitializeModels); err != nil {
+		logger.Error("Failed to reload configurations: %v", err)
+		h.WriteError(w, fmt.Sprintf("failed to reload configurations: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Update runtime manager with new runtime params
+	if h.runtimeManager != nil {
+		h.runtimeManager.UpdateRuntimeParams(h.config.RuntimeParams)
+	}
+
+	logger.Info("Configuration reloaded successfully")
+
+	h.WriteJSON(w, map[string]string{
+		"message":        "Configuration reloaded successfully",
+		"config_version": identity.ConfigVersion,
+	}, http.StatusOK)
+}
+

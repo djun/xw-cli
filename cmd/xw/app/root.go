@@ -91,6 +91,7 @@ xw server is running before executing commands.`,
 		NewDeviceCommand(opts),
 		NewConfigCommand(opts),
 		NewUpdateCommand(opts),
+		NewReloadCommand(opts),
 	)
 
 	return cmd

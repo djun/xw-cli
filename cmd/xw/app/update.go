@@ -212,9 +212,9 @@ func performUpdate(c *client.Client, targetVersion string) error {
 	fmt.Printf("\n✓ %s\n", resp.Message)
 
 	if resp.RestartRequired {
-		fmt.Println("\n⚠ Please restart the server to apply changes:")
-		fmt.Println("  xw restart")
-		fmt.Println("  or")
+		fmt.Println("\n⚠ Please reload or restart the server to apply changes:")
+		fmt.Println("  xw reload")
+		fmt.Println("  or restart manually:")
 		fmt.Println("  sudo systemctl restart xw-server")
 	}
 

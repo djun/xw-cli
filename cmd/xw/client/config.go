@@ -121,3 +121,33 @@ func (c *Client) SetConfigValue(key, value string) error {
 	return nil
 }
 
+// ConfigReloadResponse represents the response for reloading configuration.
+type ConfigReloadResponse struct {
+	Message       string `json:"message"`
+	ConfigVersion string `json:"config_version"`
+}
+
+// ReloadConfig reloads all configuration files on the server.
+//
+// This method triggers the server to reload devices.yaml, models.yaml,
+// and runtime_params.yaml from the current configuration version without
+// requiring a server restart.
+//
+// Returns:
+//   - An error if the request fails
+//
+// Example:
+//
+//	err := client.ReloadConfig()
+//	if err != nil {
+//	    log.Fatalf("Failed to reload config: %v", err)
+//	}
+func (c *Client) ReloadConfig() error {
+	var resp ConfigReloadResponse
+	if err := c.doRequest("POST", "/api/config/reload", nil, &resp); err != nil {
+		return err
+	}
+
+	return nil
+}
+
