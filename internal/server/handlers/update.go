@@ -122,21 +122,37 @@ func (h *Handler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	// Create version manager
 	vm := config.NewVersionManager(h.config)
 
-	// Fetch registry
-	logger.Debug("Fetching package registry...")
-	registry, err := vm.FetchRegistry()
-	if err != nil {
-		logger.Error("Failed to fetch registry: %v", err)
-		h.WriteError(w, fmt.Sprintf("failed to fetch registry: %v", err),
-			http.StatusInternalServerError)
-		return
-	}
-
-	// Get current versions
+	// Get current versions (always available locally)
 	currentConfig, _ := vm.GetCurrentVersion()
 	binaryVersion := h.config.BinaryVersion
 
-	// Get compatible versions
+	// Get locally installed versions (always available)
+	installed, err := vm.ListInstalledVersions()
+	if err != nil {
+		logger.Warn("Failed to list installed versions: %v", err)
+		installed = []string{}
+	}
+
+	// Try to fetch registry (may fail if offline or registry unavailable)
+	logger.Debug("Fetching package registry...")
+	registry, err := vm.FetchRegistry()
+	if err != nil {
+		logger.Warn("Failed to fetch registry: %v", err)
+		
+		// Return local information only
+		response := ListVersionsResponse{
+			CurrentXwVersion:     binaryVersion,
+			CurrentConfigVersion: currentConfig,
+			CompatibleVersions:   []config.Package{},
+			IncompatibleVersions: []config.Package{},
+			InstalledVersions:    installed,
+		}
+		
+		h.WriteJSON(w, response, http.StatusOK)
+		return
+	}
+
+	// Registry available, get compatible versions
 	compatible, err := vm.GetCompatibleVersions(binaryVersion)
 	if err != nil {
 		logger.Error("Failed to get compatible versions: %v", err)
@@ -155,14 +171,6 @@ func (h *Handler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	for _, pkg := range registry.Packages {
 		if !compatibleMap[pkg.Version] {
 			incompatible = append(incompatible, pkg)
-		}
-	}
-
-	// Get installed versions
-	var installed []string
-	for _, pkg := range registry.Packages {
-		if vm.IsVersionInstalled(pkg.Version) {
-			installed = append(installed, pkg.Version)
 		}
 	}
 

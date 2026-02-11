@@ -441,6 +441,56 @@ func (vm *VersionManager) IsVersionInstalled(version string) bool {
 	return err == nil && info.IsDir()
 }
 
+// ListInstalledVersions scans the local config directory and returns all installed versions.
+//
+// This method discovers configuration versions by examining the config directory
+// (typically ~/.xw/) for subdirectories that look like version numbers.
+//
+// Returns:
+//   - Slice of installed version strings (without "v" prefix)
+//   - Error if the config directory cannot be read
+func (vm *VersionManager) ListInstalledVersions() ([]string, error) {
+	entries, err := os.ReadDir(vm.config.Storage.ConfigDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config directory: %w", err)
+	}
+	
+	var versions []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		
+		name := entry.Name()
+		// Skip special directories (data, cache, etc.)
+		if name == "data" || name == "cache" || strings.HasPrefix(name, ".") {
+			continue
+		}
+		
+		// Version directories should match pattern like "0.0.1" or "v0.0.1"
+		// Accept any directory that looks version-like
+		if isVersionLike(name) {
+			versions = append(versions, strings.TrimPrefix(name, "v"))
+		}
+	}
+	
+	return versions, nil
+}
+
+// isVersionLike checks if a string looks like a version number.
+func isVersionLike(s string) bool {
+	// Remove "v" prefix if present
+	s = strings.TrimPrefix(s, "v")
+	
+	// Check if it starts with a digit and contains dots
+	if len(s) == 0 || (s[0] < '0' || s[0] > '9') {
+		return false
+	}
+	
+	// Must contain at least one dot (e.g., "0.0" or "0.0.1")
+	return strings.Contains(s, ".")
+}
+
 // GetCurrentVersion returns the currently active configuration version.
 func (vm *VersionManager) GetCurrentVersion() (string, error) {
 	identity, err := vm.config.GetOrCreateServerIdentity()

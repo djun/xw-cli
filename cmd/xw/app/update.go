@@ -147,6 +147,29 @@ func listVersions(c *client.Client) error {
 	}
 	fmt.Println("\n")
 
+	// Check if registry is unavailable (no compatible or incompatible versions)
+	registryUnavailable := len(resp.CompatibleVersions) == 0 && len(resp.IncompatibleVersions) == 0
+
+	if registryUnavailable {
+		fmt.Println("⚠ Unable to access remote package registry")
+		fmt.Println("  Showing locally installed versions only\n")
+		
+		if len(resp.InstalledVersions) > 0 {
+			fmt.Println("Installed versions:")
+			for _, version := range resp.InstalledVersions {
+				status := ""
+				if version == resp.CurrentConfigVersion {
+					status = " ✓ (current)"
+				}
+				fmt.Printf("  %-12s%s\n", version, status)
+			}
+		} else {
+			fmt.Println("No configuration versions installed locally")
+		}
+		
+		return nil
+	}
+
 	// Show compatible versions
 	if len(resp.CompatibleVersions) > 0 {
 		fmt.Println("Compatible versions (can be used with current xw):")
