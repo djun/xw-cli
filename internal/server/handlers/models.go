@@ -245,6 +245,18 @@ func (h *Handler) ShowModel(w http.ResponseWriter, r *http.Request) {
 	if _, hasCaps := response["capabilities"]; !hasCaps {
 		response["capabilities"] = []string{"completion"}
 	}
+	
+	// Add supported engines information
+	supportedEngines := make(map[string][]string)
+	for deviceType, backends := range spec.SupportedDevices {
+		engines := make([]string, 0, len(backends))
+		for _, backend := range backends {
+			engineStr := fmt.Sprintf("%s:%s", backend.Type, backend.Mode)
+			engines = append(engines, engineStr)
+		}
+		supportedEngines[string(deviceType)] = engines
+	}
+	response["supported_engines"] = supportedEngines
 
 	// Read generation_config.json for inference parameters (default values)
 	if genConfig := h.readGenerationConfig(modelPath); genConfig != nil {

@@ -136,16 +136,7 @@ func listVersions(c *client.Client) error {
 
 	fmt.Println("Available Configuration Versions:")
 	fmt.Printf("Current xw version: %s\n", resp.CurrentXwVersion)
-	fmt.Printf("Current config: %s", resp.CurrentConfigVersion)
-	
-	// Check if current version is installed
-	for _, installed := range resp.InstalledVersions {
-		if installed == resp.CurrentConfigVersion {
-			fmt.Print(" ✓")
-			break
-		}
-	}
-	fmt.Println("\n")
+	fmt.Printf("Current config: %s\n\n", resp.CurrentConfigVersion)
 
 	// Check if registry is unavailable (no compatible or incompatible versions)
 	registryUnavailable := len(resp.CompatibleVersions) == 0 && len(resp.IncompatibleVersions) == 0
@@ -157,11 +148,7 @@ func listVersions(c *client.Client) error {
 		if len(resp.InstalledVersions) > 0 {
 			fmt.Println("Installed versions:")
 			for _, version := range resp.InstalledVersions {
-				status := ""
-				if version == resp.CurrentConfigVersion {
-					status = " ✓ (current)"
-				}
-				fmt.Printf("  %-12s%s\n", version, status)
+				fmt.Printf("  %s\n", version)
 			}
 		} else {
 			fmt.Println("No configuration versions installed locally")
@@ -175,9 +162,8 @@ func listVersions(c *client.Client) error {
 		fmt.Println("Compatible versions (can be used with current xw):")
 		for _, pkg := range resp.CompatibleVersions {
 			status := ""
-			if pkg.Version == resp.CurrentConfigVersion {
-				status = " ✓ (current)"
-			} else {
+			// Only show (installed) for non-current versions
+			if pkg.Version != resp.CurrentConfigVersion {
 				// Check if installed
 				for _, installed := range resp.InstalledVersions {
 					if installed == pkg.Version {

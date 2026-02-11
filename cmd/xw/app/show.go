@@ -186,6 +186,30 @@ func displayAllInfo(info map[string]interface{}) {
 	fmt.Println()
 	fmt.Println()
 
+	// Supported Engines section
+	if engines, ok := info["supported_engines"].(map[string]interface{}); ok && len(engines) > 0 {
+		fmt.Println("  Supported Engines")
+		fmt.Println()
+		for device, engineList := range engines {
+			if engList, ok := engineList.([]interface{}); ok && len(engList) > 0 {
+				engineStrs := make([]string, 0, len(engList))
+				for _, eng := range engList {
+					if engStr, ok := eng.(string); ok {
+						engineStrs = append(engineStrs, engStr)
+					}
+				}
+				if len(engineStrs) > 0 {
+					fmt.Printf("    %-20s%s\n", device, engineStrs[0])
+					for i := 1; i < len(engineStrs); i++ {
+						fmt.Printf("    %-20s%s\n", "", engineStrs[i])
+					}
+				}
+			}
+		}
+		fmt.Println()
+		fmt.Println()
+	}
+
 	// Capabilities section
 	if caps, ok := info["capabilities"].([]interface{}); ok && len(caps) > 0 {
 		fmt.Println("  Capabilities")
