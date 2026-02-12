@@ -46,15 +46,15 @@ func InitializeModels(configPath string) error {
 // to fail, allowing the system to operate with whatever runtimes are available.
 //
 // Parameters:
-//   - runtimeParams: Runtime parameters loaded at startup
+//   - cfg: Configuration providing access to runtime parameters
 //
 // Returns:
 //   - Configured runtime manager
 //   - Error only if manager creation fails
-func InitializeRuntimeManager(runtimeParams *config.RuntimeParamsConfig) (*runtime.Manager, error) {
+func InitializeRuntimeManager(cfg *config.Config) (*runtime.Manager, error) {
 	// Create runtime manager
 	// Server name will be set later by the caller
-	mgr, err := runtime.NewManager("", runtimeParams)
+	mgr, err := runtime.NewManager("", cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create runtime manager: %w", err)
 	}

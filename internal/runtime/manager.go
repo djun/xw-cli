@@ -22,34 +22,31 @@ import (
 
 // Manager manages multiple runtime implementations.
 type Manager struct {
-	mu                 sync.RWMutex
-	runtimes           map[string]Runtime
-	deviceAllocator    *device.Allocator // Lazy-initialized device allocator
-	runtimeParamsConfig *config.RuntimeParamsConfig // Runtime parameter templates
-	configDir          string // Configuration directory for device allocator
-	dataDir            string // Data directory for runtime files
-	stopCh             chan struct{}
-	wg                 sync.WaitGroup
-	serverName         string // Server unique identifier for multi-server support
+	mu              sync.RWMutex
+	runtimes        map[string]Runtime
+	deviceAllocator *device.Allocator   // Lazy-initialized device allocator
+	config          *config.Config      // Configuration (provides access to RuntimeParams)
+	configDir       string              // Configuration directory for device allocator
+	dataDir         string              // Data directory for runtime files
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
+	serverName      string              // Server unique identifier for multi-server support
 }
 
-// NewManager creates a new runtime manager with the given server name and runtime parameters.
+// NewManager creates a new runtime manager with the given server name and configuration.
 // The server name is used as a suffix for container names to support multiple xw servers.
-// Runtime parameters are loaded once at startup and passed in - no runtime loading here.
-func NewManager(serverName string, runtimeParams *config.RuntimeParamsConfig) (*Manager, error) {
-	if runtimeParams == nil {
-		runtimeParams = &config.RuntimeParamsConfig{
-			Version:   "1.0",
-			Templates: []config.RuntimeParamsTemplate{},
-		}
+// Configuration is passed in to provide access to runtime parameters and other settings.
+func NewManager(serverName string, cfg *config.Config) (*Manager, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config cannot be nil")
 	}
 	
 	return &Manager{
-		runtimes:            make(map[string]Runtime),
-		deviceAllocator:     nil, // Lazy-initialized on first use
-		runtimeParamsConfig: runtimeParams,
-		stopCh:              make(chan struct{}),
-		serverName:          serverName,
+		runtimes:        make(map[string]Runtime),
+		deviceAllocator: nil, // Lazy-initialized on first use
+		config:          cfg,
+		stopCh:          make(chan struct{}),
+		serverName:      serverName,
 	}, nil
 }
 
@@ -652,12 +649,12 @@ func (m *Manager) Run(configDir, dataDir string, opts *RunOptions) (*RunInstance
 			lookupKey = chipConfigKey
 		}
 		
-		templateParams = config.GetTemplateParams(m.runtimeParamsConfig, lookupKey, opts.ModelID, backendName)
+		templateParams = config.GetTemplateParams(m.config.RuntimeParams, lookupKey, opts.ModelID, backendName)
 		
 		// If no variant-specific template found and we have a variant, try base model template
 		if len(templateParams) == 0 && chipVariantKey != "" && chipVariantKey != chipConfigKey {
 			logger.Debug("No variant-specific template for %s, trying base model %s", chipVariantKey, chipConfigKey)
-			templateParams = config.GetTemplateParams(m.runtimeParamsConfig, chipConfigKey, opts.ModelID, backendName)
+			templateParams = config.GetTemplateParams(m.config.RuntimeParams, chipConfigKey, opts.ModelID, backendName)
 		}
 		
 		if len(templateParams) > 0 {

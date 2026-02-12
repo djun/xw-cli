@@ -194,7 +194,7 @@ func runServe(opts *ServeOptions) error {
 	logger.Info("All configurations loaded successfully")
 	
 	// Initialize runtime manager with available runtimes and server identity
-	runtimeMgr, err := server.InitializeRuntimeManager(cfg.RuntimeParams)
+	runtimeMgr, err := server.InitializeRuntimeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime manager: %w", err)
 	}
